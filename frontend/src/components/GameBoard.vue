@@ -3,6 +3,8 @@
     <h1>Game</h1>
     <button @click="connectToGame">Connect</button>
     <button @click="sendMove">Make a Move</button>
+    <button @click="broadcast">To all</button>
+    <button @click="sendNext">To the next</button>
     <!-- Add your game elements here -->
   </div>
 </template>
@@ -43,7 +45,21 @@ export default {
     sendMove() {
       if (this.socket && this.socket.readyState === WebSocket.OPEN) {
         const moveData = {}; // Replace with your actual move data
-        this.socket.send(JSON.stringify({ action: "move", ...moveData }));
+        this.socket.send(JSON.stringify({ action: "question", ...moveData }));
+      } else {
+        console.error("WebSocket is not open. readyState:", this.socket.readyState);
+      }
+    },
+    broadcast() {
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        this.socket.send(JSON.stringify({ action: "everybody" }));
+      } else {
+        console.error("WebSocket is not open. readyState:", this.socket.readyState);
+      }
+    },
+    sendNext() {
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        this.socket.send(JSON.stringify({ action: "next" }));
       } else {
         console.error("WebSocket is not open. readyState:", this.socket.readyState);
       }
