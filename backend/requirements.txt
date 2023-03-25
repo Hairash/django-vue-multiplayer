@@ -1,2 +1,5 @@
+channels
+channels_redis
+daphne
 django
 psycopg2

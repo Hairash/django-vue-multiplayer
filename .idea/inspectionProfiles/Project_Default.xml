@@ -1,0 +1,31 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="Eslint" enabled="true" level="WARNING" enabled_by_default="true" />
+    <inspection_tool class="PoetryPackageVersionsInspection" enabled="false" level="WARNING" enabled_by_default="false" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <value>
+          <list size="9">
+            <item index="0" class="java.lang.String" itemvalue="setuptools_scm" />
+            <item index="1" class="java.lang.String" itemvalue="pytest-runner" />
+            <item index="2" class="java.lang.String" itemvalue="opencensus" />
+            <item index="3" class="java.lang.String" itemvalue="httpx" />
+            <item index="4" class="java.lang.String" itemvalue="opencensus-ext-azure" />
+            <item index="5" class="java.lang.String" itemvalue="wrapt" />
+            <item index="6" class="java.lang.String" itemvalue="opencensus-ext-logging" />
+            <item index="7" class="java.lang.String" itemvalue="opencensus-ext-requests" />
+            <item index="8" class="java.lang.String" itemvalue="gunicorn" />
+          </list>
+        </value>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyUnresolvedReferencesInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredIdentifiers">
+        <list>
+          <option value="sweeftservice.quickstart.pub_api.fulfillments.serializers.cnctdocs" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
