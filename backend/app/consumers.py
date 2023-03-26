@@ -3,34 +3,56 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 
 
 class GameConsumer(AsyncWebsocketConsumer):
-    players = {}
+    players = []
 
     async def connect(self):
         # Add the player to a group based on the game room
         cur_player = len(self.players)
-        self.players[self.channel_name] = f'group{cur_player}'
+        self.players.append(self.channel_name)
         print(f'=====> Connected player: {self.channel_name}')
-        print(f'=====> Group: {self.players[self.channel_name]}')
+        print(f'=====> Group: {self.get_player_group_name(self.channel_name)}')
 
         await self.channel_layer.group_add(
-            self.players[self.channel_name],
+            self.get_player_group_name(self.channel_name),
             self.channel_name,
         )
         await self.channel_layer.group_add(
             'all',
             self.channel_name,
         )
+
+        # Send the response back to the group (all connected players)
+        response_data = {'action': 'connected', 'player': self.get_player_short_name(self.channel_name)}
+        await self.channel_layer.group_send(
+            'all',
+            {
+                'type': 'send_message_to_group',
+                'message': json.dumps(response_data),
+            },
+        )
+        await self.broadcast_list_of_players()
         await self.accept()
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(
-            self.players[self.channel_name],
+            self.get_player_group_name(self.channel_name),
             self.channel_name,
         )
         await self.channel_layer.group_discard(
             'all',
             self.channel_name,
         )
+
+        response_data = {'action': 'disconnected', 'player': self.get_player_short_name(self.channel_name)}
+        await self.channel_layer.group_send(
+            'all',
+            {
+                'type': 'send_message_to_group',
+                'message': json.dumps(response_data),
+            },
+        )
+        self.remove_player(self.channel_name)
+        await self.broadcast_list_of_players()
 
     async def receive(self, text_data):
         data = json.loads(text_data)
@@ -41,7 +63,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
             # Send the response back to the group (all connected players)
             await self.channel_layer.group_send(
-                self.players[self.channel_name],
+                self.get_player_group_name(self.channel_name),
                 {
                     'type': 'send_message_to_group',
                     'message': json.dumps(response_data),
@@ -63,17 +85,31 @@ class GameConsumer(AsyncWebsocketConsumer):
         elif data['action'] == 'next':
             response_data = {'action': 'just for you'}
 
-            keys = list(self.players.keys())
-            next_player_name = keys[(keys.index(self.channel_name) + 1) % len(keys)]
+            # keys = list(self.players.keys())
+            # next_player_name = keys[(keys.index(self.channel_name) + 1) % len(keys)]
+            next_player_idx = self.players.index(self.channel_name) + 1 % len(self.players)
 
             # Send the response back to the group (all connected players)
             await self.channel_layer.group_send(
-                self.players[next_player_name],
+                self.players[next_player_idx],
                 {
                     'type': 'send_message_to_group',
                     'message': json.dumps(response_data),
                 },
             )
+
+    async def broadcast_list_of_players(self):
+        response_data = {
+            'action': 'list',
+            'players': [self.get_player_short_name(player) for player in self.players],
+        }
+        await self.channel_layer.group_send(
+            'all',
+            {
+                'type': 'send_message_to_group',
+                'message': json.dumps(response_data),
+            },
+        )
 
     async def send_message_to_group(self, event):
         message = event['message']
@@ -82,3 +118,13 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def send_game_state(self, game_state):
         await self.send(game_state)
         # await self.send(json.dumps(game_state))
+
+    @staticmethod
+    def get_player_short_name(name):
+        return name[-4:]
+
+    def get_player_group_name(self, name):
+        return f'group{self.players.index(name)}'
+
+    def remove_player(self, name):
+        self.players.remove(name)

@@ -5,17 +5,22 @@
     <button @click="sendMove">Make a Move</button>
     <button @click="broadcast">To all</button>
     <button @click="sendNext">To the next</button>
+    <PlayersList :players=players />
     <!-- Add your game elements here -->
   </div>
 </template>
 
 <script>
-// import axios from "axios";
+import PlayersList from './PlayersList.vue'
 
 export default {
+  components: {
+    PlayersList,
+  },
   data() {
     return {
       socket: null,
+      players: [],
       gameState: {},
     };
   },
@@ -29,8 +34,8 @@ export default {
 
       this.socket.addEventListener("message", (event) => {
         const data = JSON.parse(event.data);
-        if (data.action === "update") {
-          this.gameState = data.game_state;
+        if (data.action === "list") {
+          this.players = data.players;
         }
       });
 
