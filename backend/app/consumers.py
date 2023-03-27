@@ -1,5 +1,17 @@
 import json
+from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.apps import apps
+
+
+@database_sync_to_async
+def get_user(token_key):
+    Token = apps.get_model('authtoken', 'Token')
+    try:
+        token = Token.objects.get(key=token_key)
+        return token.user
+    except Token.DoesNotExist:
+        return None
 
 
 class GameConsumer(AsyncWebsocketConsumer):
@@ -53,11 +65,24 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
         self.remove_player(self.channel_name)
         await self.broadcast_list_of_players()
+        print('=======> Disconnected')
+        print(f'=======> Players: {self.players}')
+        return
 
     async def receive(self, text_data):
         data = json.loads(text_data)
 
         # Process the received data and generate a response
+        if data['action'] == 'authenticate':
+            token_key = data['token']
+            user = await get_user(token_key)
+
+            if user:
+                self.scope['user'] = user
+                await self.send(json.dumps({'type': 'authenticated'}))
+            else:
+                await self.close()
+
         if data['action'] == 'question':
             response_data = {'action': 'answer'}
 
@@ -87,11 +112,13 @@ class GameConsumer(AsyncWebsocketConsumer):
 
             # keys = list(self.players.keys())
             # next_player_name = keys[(keys.index(self.channel_name) + 1) % len(keys)]
-            next_player_idx = self.players.index(self.channel_name) + 1 % len(self.players)
+            next_player_idx = (self.players.index(self.channel_name) + 1) % len(self.players)
+            print(f'=====> Next player id: {next_player_idx}')
+            print(f'=====> Next player: {self.get_player_short_name(self.players[next_player_idx])}')
 
             # Send the response back to the group (all connected players)
             await self.channel_layer.group_send(
-                self.players[next_player_idx],
+                self.get_player_group_name(self.players[next_player_idx]),
                 {
                     'type': 'send_message_to_group',
                     'message': json.dumps(response_data),
@@ -124,7 +151,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         return name[-4:]
 
     def get_player_group_name(self, name):
-        return f'group{self.players.index(name)}'
+        return f'group_{self.get_player_short_name(name)}'
 
     def remove_player(self, name):
         self.players.remove(name)

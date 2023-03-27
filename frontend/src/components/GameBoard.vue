@@ -1,5 +1,6 @@
 <template>
   <div>
+    <AuthHeader />
     <h1>Game</h1>
     <button @click="connectToGame">Connect</button>
     <button @click="sendMove">Make a Move</button>
@@ -11,11 +12,14 @@
 </template>
 
 <script>
+import { inject } from 'vue';
 import PlayersList from './PlayersList.vue'
+import AuthHeader from './AuthHeader.vue'
 
 export default {
   components: {
     PlayersList,
+    AuthHeader,
   },
   data() {
     return {
@@ -24,12 +28,23 @@ export default {
       gameState: {},
     };
   },
+  setup() {
+    const gameState = inject('gameState');
+    const { currentState, states } = gameState.state;
+    const setState = gameState.setState;
+  },
   methods: {
     connectToGame() {
+      console.log(this.socket);
+      if (this.socket) return;
       this.socket = new WebSocket("ws://localhost:8000/ws/game/");
 
       this.socket.addEventListener("open", (event) => {
         console.log("WebSocket connected:", event);
+        const token = localStorage.getItem('token');
+        this.socket.send(JSON.stringify({ action: "authenticate", token: token }));
+        console.log(token);
+        setState(states.connected);
       });
 
       this.socket.addEventListener("message", (event) => {
