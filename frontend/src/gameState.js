@@ -1,19 +1,33 @@
-import { reactive, readonly } from 'vue';
+import { reactive, computed } from 'vue';
 
-const state = reactive({
-  currentState: 'initial',
-  states: {
-    new: 'new',
-    loggedIn: 'loggedIn',
-    connected: 'connected',
-  },
+const stateData = reactive({
+  isLoggedIn: false,
+  isConnected: false,
 });
 
-const setState = (newState) => {
-  state.currentState = newState;
-};
+const states = {
+  new: 'new',
+  loggedIn: 'loggedIn',
+  connected: 'connected',
+}
+
+const currentState = computed(() => {
+  if (!stateData.isLoggedIn) {
+    return states.new;
+  } else if (!stateData.isConnected) {
+    return states.loggedIn;
+  } else {
+    return states.connected;
+  }
+});
+
+function checkLoggedIn() {
+  stateData.isLoggedIn = !!localStorage.getItem('token');
+}
 
 export default {
-  state: readonly(state),
-  setState,
+  stateData,
+  states,
+  currentState,
+  checkLoggedIn,
 };

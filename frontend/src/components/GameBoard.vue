@@ -2,21 +2,22 @@
   <div>
     <AuthHeader />
     <h1>Game</h1>
-    <button @click="connectToGame">Connect</button>
-    <button @click="sendMove">Make a Move</button>
-    <button @click="broadcast">To all</button>
-    <button @click="sendNext">To the next</button>
+    <p>Current state: {{ currentState }}</p>
+    <button @click="connectToGame" :disabled="currentState !== states.loggedIn">Connect</button>
+    <button @click="sendMove" :disabled="currentState !== states.connected">Make a Move</button>
+    <button @click="broadcast" :disabled="currentState !== states.connected">To all</button>
+    <button @click="sendNext" :disabled="currentState !== states.connected">To the next</button>
     <PlayersList :players=players />
-    <!-- Add your game elements here -->
   </div>
 </template>
 
 <script>
-import { inject } from 'vue';
 import PlayersList from './PlayersList.vue'
 import AuthHeader from './AuthHeader.vue'
+import gameState from '@/gameState';
 
 export default {
+  inject: ['gameState'],
   components: {
     PlayersList,
     AuthHeader,
@@ -25,26 +26,26 @@ export default {
     return {
       socket: null,
       players: [],
-      gameState: {},
+      currentState: gameState.currentState,
+      states: gameState.states,
+      stateData: gameState.stateData,
     };
   },
-  setup() {
-    const gameState = inject('gameState');
-    const { currentState, states } = gameState.state;
-    const setState = gameState.setState;
+  mounted() {
+    this.gameState.checkLoggedIn();
   },
   methods: {
     connectToGame() {
       console.log(this.socket);
       if (this.socket) return;
       this.socket = new WebSocket("ws://localhost:8000/ws/game/");
+      this.stateData.isConnected = true;
 
       this.socket.addEventListener("open", (event) => {
         console.log("WebSocket connected:", event);
         const token = localStorage.getItem('token');
         this.socket.send(JSON.stringify({ action: "authenticate", token: token }));
         console.log(token);
-        setState(states.connected);
       });
 
       this.socket.addEventListener("message", (event) => {
@@ -55,6 +56,7 @@ export default {
       });
 
       this.socket.addEventListener("close", (event) => {
+        this.stateData.isConnected = false;
         console.log("WebSocket closed:", event);
       });
 

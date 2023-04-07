@@ -26,8 +26,6 @@ export default {
 <style>
 body {
   background-color: #141618;
-  /* top: 0; */
-  /* margin-top: 0; */
 }
 
 #app {
