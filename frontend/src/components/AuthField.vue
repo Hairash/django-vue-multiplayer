@@ -19,7 +19,6 @@
 
   <script>
   import axiosInstance from '../axiosInstance';
-  import gameState from '@/gameState';
 
   export default {
     inject: ['gameState'],
