@@ -39,7 +39,7 @@ export default {
       console.log(this.socket);
       if (this.socket) return;
       this.socket = new WebSocket("ws://localhost:8000/ws/game/");
-      this.stateData.isConnected = true;
+      this.gameState.checkConnected(this.socket);
 
       this.socket.addEventListener("open", (event) => {
         console.log("WebSocket connected:", event);
@@ -53,10 +53,14 @@ export default {
         if (data.action === "list") {
           this.players = data.players;
         }
+        if (data.action === "error") {
+          alert(data.message);
+        }
       });
 
       this.socket.addEventListener("close", (event) => {
-        this.stateData.isConnected = false;
+        this.socket = null;
+        this.gameState.checkConnected(this.socket);
         console.log("WebSocket closed:", event);
       });
 

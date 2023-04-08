@@ -25,9 +25,14 @@ function checkLoggedIn() {
   stateData.isLoggedIn = !!localStorage.getItem('token');
 }
 
+function checkConnected(socket) {
+  stateData.isConnected = !!socket;
+}
+
 export default {
   stateData,
   states,
   currentState,
   checkLoggedIn,
+  checkConnected,
 };
