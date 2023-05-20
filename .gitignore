@@ -1,2 +1,8 @@
-node_modules
+# Backend
+backend/staticfiles
 *.log
+venv
+.idea
+
+# Front
+node_modules

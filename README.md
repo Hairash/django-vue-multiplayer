@@ -12,9 +12,11 @@ Test multiplayer application using Django/Vue and websockets
 
 # How to run
 ### Server
-1. Run redis  
+1. Run postgres  
+`brew services start postgresql`
+2. Run redis  
 `redis-server`
-2. Run daphne  
+3. Run daphne  
 `daphne django_vue_multiplayer.asgi:application`
 
 ### Client
