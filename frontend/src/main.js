@@ -1,10 +1,10 @@
-import { createApp } from 'vue'
+import { createApp, reactive } from 'vue'
 import App from './App.vue'
 import router from './router';
-import gameState from './gameState';
+import clientState from '@/clientState';
 
 const app = createApp(App);
 
 app.use(router);
-app.provide('gameState', gameState);
+app.provide('clientState', reactive(clientState));
 app.mount('#app');

@@ -5,22 +5,7 @@
 </template>
 
 <script>
-export default {
-  components: {
-  },
-  data() {
-    const STATES = {
-      NEW: 'new',
-      LOGEDIN: 'logedIn',
-      CONNECTED: 'connected',
-    };
-    const state = STATES.NEW;
-    return {
-      STATES,
-      state,
-    }
-  }
-};
+
 </script>
 
 <style>

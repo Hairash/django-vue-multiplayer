@@ -3,21 +3,23 @@
     <AuthHeader />
     <h1>Game</h1>
     <p>Current state: {{ currentState }}</p>
-    <button @click="connectToGame" :disabled="currentState !== states.loggedIn">Connect</button>
-    <button @click="sendMove" :disabled="currentState !== states.connected">Make a Move</button>
-    <button @click="broadcast" :disabled="currentState !== states.connected">To all</button>
-    <button @click="sendNext" :disabled="currentState !== states.connected">To the next</button>
-    <PlayersList :players=players />
+    <button @click='connectToGame' :disabled='currentState !== states.loggedIn'>Connect</button>
+    <button @click='startGame' :disabled='currentState !== states.connected'>Start</button>
+    <button @click='sendMove' :disabled='currentState !== states.playing'>Make a Move</button>
+    <button @click='broadcast' :disabled='currentState !== states.playing'>To all</button>
+    <button @click='sendNext' :disabled='currentState !== states.playing'>To the next</button>
+    <button @click='endGame' :disabled='currentState !== states.playing'>End</button>
+    <PlayersList :players=visitors />
   </div>
 </template>
 
 <script>
 import PlayersList from './PlayersList.vue'
 import AuthHeader from './AuthHeader.vue'
-import gameState from '@/gameState';
+import clientState from '@/clientState';
 
 export default {
-  inject: ['gameState'],
+  inject: ['clientState'],
   components: {
     PlayersList,
     AuthHeader,
@@ -25,69 +27,80 @@ export default {
   data() {
     return {
       socket: null,
-      players: [],
-      currentState: gameState.currentState,
-      states: gameState.states,
-      stateData: gameState.stateData,
+      visitors: [],
+      // TODO: Make an enum
+      serverState: 'wait',
+      // TODO: Refactor it - remove and use this.clientState
+      currentState: clientState.currentState,
+      states: clientState.states,
+      stateData: clientState.stateData,
     };
   },
   mounted() {
-    this.gameState.checkLoggedIn();
+    this.clientState.checkLoggedIn();
   },
   methods: {
     connectToGame() {
       console.log(this.socket);
       if (this.socket) return;
-      this.socket = new WebSocket("ws://localhost:8000/ws/game/");
-      this.gameState.checkConnected(this.socket);
+      this.socket = new WebSocket('ws://localhost:8000/ws/game/');
+      this.clientState.checkConnected(this.socket);
 
-      this.socket.addEventListener("open", (event) => {
-        console.log("WebSocket connected:", event);
+      this.socket.addEventListener('open', (event) => {
+        console.log('WebSocket connected:', event);
         const token = localStorage.getItem('token');
-        this.socket.send(JSON.stringify({ action: "authenticate", token: token }));
+        this.socket.send(JSON.stringify({ action: 'authenticate', token: token }));
         console.log(token);
       });
 
-      this.socket.addEventListener("message", (event) => {
+      this.socket.addEventListener('message', (event) => {
         const data = JSON.parse(event.data);
-        if (data.action === "list") {
-          this.players = data.players;
+        if (data.action === 'server_state') {
+          this.visitors = data.visitors;
+          this.serverState = data.state;
+          this.clientState.checkPlaying(this.serverState);
         }
-        if (data.action === "error") {
+        if (data.action === 'error') {
           alert(data.message);
         }
       });
 
-      this.socket.addEventListener("close", (event) => {
+      this.socket.addEventListener('close', (event) => {
         this.socket = null;
-        this.gameState.checkConnected(this.socket);
-        console.log("WebSocket closed:", event);
+        this.clientState.checkConnected(this.socket);
+        console.log('WebSocket closed:', event);
       });
 
-      this.socket.addEventListener("error", (event) => {
-        console.error("WebSocket error:", event);
+      this.socket.addEventListener('error', (event) => {
+        console.error('WebSocket error:', event);
       });
+    },
+    startGame() {
+      this.socket.send(JSON.stringify({ action: 'start' }));
+    },
+    endGame() {
+      this.socket.send(JSON.stringify({ action: 'end' }));
     },
     sendMove() {
       if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-        const moveData = {}; // Replace with your actual move data
-        this.socket.send(JSON.stringify({ action: "question", ...moveData }));
+        const moveData = {}; // TODO: Replace with your actual move data
+        this.socket.send(JSON.stringify({ action: 'question', ...moveData }));
       } else {
-        console.error("WebSocket is not open. readyState:", this.socket.readyState);
+        console.error('WebSocket is not open. readyState:', this.socket.readyState);
       }
     },
     broadcast() {
       if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-        this.socket.send(JSON.stringify({ action: "everybody" }));
+        this.socket.send(JSON.stringify({ action: 'everybody' }));
       } else {
-        console.error("WebSocket is not open. readyState:", this.socket.readyState);
+        console.error('WebSocket is not open. readyState:', this.socket.readyState);
       }
     },
     sendNext() {
       if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-        this.socket.send(JSON.stringify({ action: "next" }));
+        this.socket.send(JSON.stringify({ action: 'next' }));
       } else {
-        console.error("WebSocket is not open. readyState:", this.socket.readyState);
+        console.error('WebSocket is not open. readyState:', this.socket.readyState);
       }
     },
     // Add additional methods for handling game logic and making HTTP requests to the server

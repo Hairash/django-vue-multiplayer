@@ -21,7 +21,7 @@
   import axiosInstance from '../axiosInstance';
 
   export default {
-    inject: ['gameState'],
+    inject: ['clientState'],
     data() {
       return {
         username: '',
@@ -62,7 +62,7 @@
       saveCredentials(token, username) {
         localStorage.setItem('token', token);
         localStorage.setItem('user', username);
-        this.gameState.checkLoggedIn();
+        this.clientState.checkLoggedIn();
       }
     },
   };
