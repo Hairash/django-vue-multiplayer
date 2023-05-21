@@ -24,41 +24,47 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-@0!l$k^+eom^6&sc==drha_8s@1ra4j*ba9*jbb5jfykr^&*gw'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
-ALLOWED_HOSTS = []
-
-# For local run only
-CORS_ALLOWED_ORIGINS = ['http://localhost:8080']
-
-CORS_ALLOW_CREDENTIALS = True
-
-CORS_ALLOW_METHODS = [
-    'DELETE',
-    'GET',
-    'OPTIONS',
-    'PATCH',
-    'POST',
-    'PUT',
+ALLOWED_HOSTS = [
+    '*',
+    # 'durak-game-backend.onrender.com',
+    # 'localhost',
+    # '127.0.0.1'
 ]
 
-CORS_ALLOW_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
+# For development purposes, you can allow any origin
+CORS_ALLOWED_ORIGINS = [
+    'https://durak-game-frontend.onrender.com',
 ]
+
+# CORS_ALLOW_CREDENTIALS = True
+
+# CORS_ALLOW_METHODS = [
+#     'DELETE',
+#     'GET',
+#     'OPTIONS',
+#     'PATCH',
+#     'POST',
+#     'PUT',
+# ]
+
+# CORS_ALLOW_HEADERS = [
+#     'accept',
+#     'accept-encoding',
+#     'authorization',
+#     'content-type',
+#     'dnt',
+#     'origin',
+#     'user-agent',
+#     'x-csrftoken',
+#     'x-requested-with',
+# ]
 
 
 # Application definition
 
 INSTALLED_APPS = [
-    'corsheaders',  # TODO: Remove in PROD
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -70,6 +76,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'app',
     'user_auth',
+    'corsheaders',
 ]
 
 MIDDLEWARE = [
