@@ -5,6 +5,10 @@
     <p>Current state: {{ currentState }}</p>
     <button @click='connectToGame' :disabled='currentState !== states.loggedIn'>Connect</button>
     <button @click='startGame' :disabled='currentState !== states.connected'>Start</button>
+    <button @click='play' :disabled='!isPlayEnabled()'>Play</button>
+    <button @click='take' :disabled='!isTakeEnabled()'>Take</button>
+    <button @click='pass' :disabled='!isPassEnabled()'>Pass</button>
+    <br />
     <button @click='sendMove' :disabled='currentState !== states.playing'>Make a Move</button>
     <button @click='broadcast' :disabled='currentState !== states.playing'>To all</button>
     <button @click='sendNext' :disabled='currentState !== states.playing'>To the next</button>
@@ -30,6 +34,8 @@ export default {
       visitors: [],
       // TODO: Make an enum
       serverState: 'wait',
+      gameState: {},
+      clientPlayer: null,
       // TODO: Refactor it - remove and use this.clientState
       currentState: clientState.currentState,
       states: clientState.states,
@@ -38,6 +44,7 @@ export default {
   },
   mounted() {
     this.clientState.checkLoggedIn();
+    this.clientPlayer = localStorage.getItem('user');
   },
   methods: {
     connectToGame() {
@@ -55,12 +62,15 @@ export default {
 
       this.socket.addEventListener('message', (event) => {
         const data = JSON.parse(event.data);
-        if (data.action === 'server_state') {
+        if (data.action === 'game_state') {
+          this.gameState = data;
+        }
+        else if (data.action === 'server_state') {
           this.visitors = data.visitors;
           this.serverState = data.state;
           this.clientState.checkPlaying(this.serverState);
         }
-        if (data.action === 'error') {
+        else if (data.action === 'error') {
           alert(data.message);
         }
       });
@@ -80,6 +90,37 @@ export default {
     },
     endGame() {
       this.socket.send(JSON.stringify({ action: 'end' }));
+    },
+    play() {
+      this.socket.send(JSON.stringify({ action: 'play' }));
+    },
+    take() {
+      this.socket.send(JSON.stringify({ action: 'take' }));
+    },
+    pass() {
+      this.socket.send(JSON.stringify({ action: 'pass' }));
+    },
+    // TODO: Refactor - make one function
+    isPlayEnabled() {
+      return (
+        this.currentState === this.states.playing && this.clientPlayer &&
+        this.gameState.active_players.includes(this.clientPlayer) &&
+        this.gameState.allowed_actions.includes('play')
+      )
+    },
+    isTakeEnabled() {
+      return (
+        this.currentState === this.states.playing && this.clientPlayer &&
+        this.gameState.active_players.includes(this.clientPlayer) &&
+        this.gameState.allowed_actions.includes('take')
+      )
+    },
+    isPassEnabled() {
+      return (
+        this.currentState === this.states.playing && this.clientPlayer &&
+        this.gameState.active_players.includes(this.clientPlayer) &&
+        this.gameState.allowed_actions.includes('pass')
+      )
     },
     sendMove() {
       if (this.socket && this.socket.readyState === WebSocket.OPEN) {

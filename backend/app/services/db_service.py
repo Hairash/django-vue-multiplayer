@@ -1,7 +1,12 @@
+import logging
+
 from channels.db import database_sync_to_async
 from rest_framework.authtoken.models import Token
 
 from app.models import Game, Player
+
+
+logger = logging.getLogger('django_vue_multiplayer')
 
 
 @database_sync_to_async
@@ -75,7 +80,7 @@ def set_game_state(game, state):
 
 
 @database_sync_to_async
-def make_participants(game):
+def init_participants(game):
     for user in game.visitors.all():
         game.participants.add(user)
     game.save()
@@ -84,3 +89,86 @@ def make_participants(game):
 @database_sync_to_async
 def remove_player(player):
     player.delete()
+
+
+@database_sync_to_async
+def init_current_player(game):
+    game.current_player = game.participants.first()
+    game.save()
+    return game.current_player
+
+
+@database_sync_to_async
+def get_current_player(game):
+    return game.current_player
+
+
+@database_sync_to_async
+def set_current_player(game, player):
+    game.current_player = player
+    game.save()
+    return player
+
+
+@database_sync_to_async
+def get_current_player_user_name(game):
+    return getattr(getattr(getattr(game, 'current_player', None), 'user', None), 'username', None)
+
+
+@database_sync_to_async
+def get_phase(game):
+    return game.phase
+
+
+@database_sync_to_async
+def get_active_player_names(game):
+    active_player_names = [player.user.username for player in game.active_players.all()]
+    return active_player_names
+
+
+@database_sync_to_async
+def get_allowed_actions(game):
+    return game.allowed_actions
+
+
+@database_sync_to_async
+def set_phase(game, phase):
+    game.phase = phase
+    game.save()
+
+
+@database_sync_to_async
+def set_active_players(game, players):
+    game.active_players.clear()
+    for player in players:
+        game.active_players.add(player)
+    game.save()
+
+
+@database_sync_to_async
+def set_allowed_actions(game, actions):
+    game.allowed_actions.clear()
+    for action in actions:
+        game.allowed_actions.append(action)
+    game.save()
+
+
+@database_sync_to_async
+def toggle_phase(game):
+    if game.phase == Game.Phases.ATTACK:
+        game.phase = Game.Phases.DEFENSE
+    else:
+        game.phase = Game.Phases.ATTACK
+    game.save()
+    return game.phase
+
+
+@database_sync_to_async
+def toggle_active_players(game):
+    active_players = list(game.participants.exclude(
+        id__in=game.active_players.values_list('id', flat=True)
+    ))
+    game.active_players.clear()
+    for player in active_players:
+        game.active_players.add(player)
+    game.save()

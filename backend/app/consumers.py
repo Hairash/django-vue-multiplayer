@@ -14,8 +14,20 @@ from .services.db_service import (
     get_next_player,
     get_game_visitors_participants_names,
     set_game_state,
-    make_participants,
+    init_participants,
     remove_player,
+    init_current_player,
+    set_current_player,
+    get_current_player,
+    get_current_player_user_name,
+    get_phase,
+    get_active_player_names,
+    get_allowed_actions,
+    set_phase,
+    set_active_players,
+    set_allowed_actions,
+    toggle_phase,
+    toggle_active_players,
 )
 from .models import Game
 
@@ -24,6 +36,7 @@ logger = logging.getLogger('django_vue_multiplayer')
 
 
 class BroadcastMixin(AsyncWebsocketConsumer):
+    # TODO: Change to broadcast_data (move json.dumps to the function)
     async def broadcast_message(self, message):
         await self.channel_layer.group_send(
             'all',
@@ -33,7 +46,7 @@ class BroadcastMixin(AsyncWebsocketConsumer):
             },
         )
 
-    async def send_message_to_player(self, message, player):
+    async def send_message_to_player(self, player, message):
         await self.channel_layer.group_send(
             self.get_user_group_name(player.channel_name),
             {
@@ -78,9 +91,71 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
 
     async def handle_start(self, data, game):
         await set_game_state(game, Game.States.GAME)
-        await make_participants(game)
+        await init_participants(game)
         await self.broadcast_server_state()
+        current_player = await init_current_player(game)
+        await set_phase(game, Game.Phases.ATTACK)
+        await set_active_players(game, [current_player])
+        await set_allowed_actions(game, [Game.Actions.PLAY])
+        await self.broadcast_game_state()
 
+    async def handle_play(self, data, game):
+        current_player = await get_current_player(game)
+        next_player = await get_next_player(game, current_player)
+        # await set_current_player(game, next_player)
+        phase = await toggle_phase(game)
+        if phase == Game.Phases.ATTACK:
+            await toggle_active_players(game)
+            await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
+        else:
+            await set_active_players(game, [next_player])
+            await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.TAKE])
+        await self.broadcast_game_state()
+
+    async def handle_take(self, data, game):
+        # TODO: Move to functions
+        # Change current player (next after defender or +2)
+        current_player = await get_current_player(game)
+        next_player = await get_next_player(game, current_player)
+        next_player = await get_next_player(game, next_player)
+        current_player = await set_current_player(game, next_player)
+        # Start new turn
+        await set_phase(game, Game.Phases.ATTACK)
+        await set_active_players(game, [current_player])
+        await set_allowed_actions(game, [Game.Actions.PLAY])
+        await self.broadcast_game_state()
+
+    async def handle_pass(self, data, game):
+        # TODO: Make more wise handling - count number of passes
+        # TODO: Move to functions
+        # Change current player
+        current_player = await get_current_player(game)
+        next_player = await get_next_player(game, current_player)
+        current_player = await set_current_player(game, next_player)
+        # Start new turn
+        await set_phase(game, Game.Phases.ATTACK)
+        await set_active_players(game, [current_player])
+        await set_allowed_actions(game, [Game.Actions.PLAY])
+        await self.broadcast_game_state()
+
+    async def broadcast_game_state(self):
+        game = await get_or_create_game()
+        current_player_user_name = await get_current_player_user_name(game)
+        phase = await get_phase(game)
+        active_player_names = await get_active_player_names(game)
+        allowed_actions = await get_allowed_actions(game)
+        response_data = {
+            'action': 'game_state',
+            'current_player': current_player_user_name,
+            'phase': phase,
+            'active_players': active_player_names,
+            'allowed_actions': allowed_actions,
+        }
+        await self.broadcast_message(json.dumps(response_data))
+
+    # TODO: Add 'end' action handler
+
+    # Test handlers
     async def handle_question(self, data, game):
         response_data = {'action': 'answer'}
         await self.send(json.dumps(response_data))
@@ -93,9 +168,7 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
         response_data = {'action': 'just for you'}
         player = await get_player_by_channel_name(game, self.channel_name)
         next_player = await get_next_player(game, player)
-        await self.send_message_to_player(json.dumps(response_data), next_player)
-
-    # TODO: Add 'end' action handler
+        await self.send_message_to_player(next_player, json.dumps(response_data))
 
 
 class GameConsumer(ActionHandlerMixin, BroadcastMixin, AsyncWebsocketConsumer):
@@ -104,6 +177,10 @@ class GameConsumer(ActionHandlerMixin, BroadcastMixin, AsyncWebsocketConsumer):
         self.action_handler_funcs = {
             'authenticate': self.handle_authenticate,
             'start': self.handle_start,
+            'play': self.handle_play,
+            'take': self.handle_take,
+            'pass': self.handle_pass,
+            # Test messages
             'question': self.handle_question,
             'everybody': self.handle_everybody,
             'next': self.handle_next,
