@@ -180,7 +180,6 @@ def get_participants(game):
     return list(game.participants.order_by('id').all())
 
 
-
 @database_sync_to_async
 def get_player_hand(player):
     return player.hand
@@ -232,6 +231,7 @@ def end_game(game):
     game.deck = []
     game.table = []
     game.save()
+
 
 @database_sync_to_async
 def is_player_in_active_players(game, player):
