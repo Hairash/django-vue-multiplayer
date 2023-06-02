@@ -28,6 +28,14 @@ from .services.db_service import (
     set_allowed_actions,
     toggle_phase,
     toggle_active_players,
+    get_participants,
+    get_player_hand,
+    play_card_to_table,
+    get_table, take_cards_from_table, clear_table,
+)
+from .services.game_service import (
+    generate_deck,
+    replenish_all_player_hands,
 )
 from .models import Game
 
@@ -80,7 +88,7 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
             logger.debug(player)
             await update_player_user(player, user)
             await self.send(json.dumps({'action': 'authenticated'}))
-            await self.broadcast_server_state()
+            await self.broadcast_server_state(game)
         elif not user:
             await self.send(json.dumps({'action': 'error', 'message': 'Invalid token. Please re-login'}))
             await self.close()
@@ -92,64 +100,93 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
     async def handle_start(self, data, game):
         await set_game_state(game, Game.States.GAME)
         await init_participants(game)
-        await self.broadcast_server_state()
+        await self.broadcast_server_state(game)
+        await generate_deck(game)
+        await replenish_all_player_hands(game)
         current_player = await init_current_player(game)
         await set_phase(game, Game.Phases.ATTACK)
         await set_active_players(game, [current_player])
         await set_allowed_actions(game, [Game.Actions.PLAY])
-        await self.broadcast_game_state()
+        await self.broadcast_game_state(game)
+        await self.send_all_player_hands(game)
 
     async def handle_play(self, data, game):
+        active_player = await get_player_by_channel_name(game, self.channel_name)
+        # TODO: Check is it possible to make turn - if active_player in game.active_players
+        # TODO: Check does the player really have such a card
         current_player = await get_current_player(game)
-        next_player = await get_next_player(game, current_player)
+        defender = await get_next_player(game, current_player)
         # await set_current_player(game, next_player)
+        card_dict = data['card']
+        await play_card_to_table(game, active_player, card_dict)
+
         phase = await toggle_phase(game)
         if phase == Game.Phases.ATTACK:
             await toggle_active_players(game)
             await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
         else:
-            await set_active_players(game, [next_player])
+            await set_active_players(game, [defender])
             await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.TAKE])
-        await self.broadcast_game_state()
+
+        await self.broadcast_game_state(game)
+        await self.send_all_player_hands(game)
 
     async def handle_take(self, data, game):
-        # TODO: Move to functions
-        # Change current player (next after defender or +2)
+        active_player = await get_player_by_channel_name(game, self.channel_name)
         current_player = await get_current_player(game)
-        next_player = await get_next_player(game, current_player)
-        next_player = await get_next_player(game, next_player)
+        defender = await get_next_player(game, current_player)
+        next_player = await get_next_player(game, defender)
+        await take_cards_from_table(game, active_player)
         current_player = await set_current_player(game, next_player)
+        # TODO: Move to function
         # Start new turn
+        await replenish_all_player_hands(game)
         await set_phase(game, Game.Phases.ATTACK)
         await set_active_players(game, [current_player])
         await set_allowed_actions(game, [Game.Actions.PLAY])
-        await self.broadcast_game_state()
+        await self.broadcast_game_state(game)
+        await self.send_all_player_hands(game)
 
     async def handle_pass(self, data, game):
         # TODO: Make more wise handling - count number of passes
+        # Move cards to the discard pile
+        await clear_table(game)
         # TODO: Move to functions
         # Change current player
         current_player = await get_current_player(game)
         next_player = await get_next_player(game, current_player)
         current_player = await set_current_player(game, next_player)
         # Start new turn
+        await replenish_all_player_hands(game)
         await set_phase(game, Game.Phases.ATTACK)
         await set_active_players(game, [current_player])
         await set_allowed_actions(game, [Game.Actions.PLAY])
-        await self.broadcast_game_state()
+        await self.broadcast_game_state(game)
+        await self.send_all_player_hands(game)
 
-    async def broadcast_game_state(self):
-        game = await get_or_create_game()
+    async def send_player_hand(self, player):
+        cards = await get_player_hand(player)
+        data = {'action': 'hand', 'cards': cards}
+        await self.send_message_to_player(player, json.dumps(data))
+
+    async def send_all_player_hands(self, game):
+        players = await get_participants(game)
+        for player in players:
+            await self.send_player_hand(player)
+    
+    async def broadcast_game_state(self, game):
         current_player_user_name = await get_current_player_user_name(game)
         phase = await get_phase(game)
         active_player_names = await get_active_player_names(game)
         allowed_actions = await get_allowed_actions(game)
+        table = await get_table(game)
         response_data = {
             'action': 'game_state',
             'current_player': current_player_user_name,
             'phase': phase,
             'active_players': active_player_names,
             'allowed_actions': allowed_actions,
+            'table': table,
         }
         await self.broadcast_message(json.dumps(response_data))
 
@@ -236,7 +273,7 @@ class GameConsumer(ActionHandlerMixin, BroadcastMixin, AsyncWebsocketConsumer):
         # TODO: If yes - remove players from the game
         await set_game_state(game, Game.States.WAIT)
         # logger.debug('Disconnect player removed from the list')
-        await self.broadcast_server_state()
+        await self.broadcast_server_state(game)
         logger.debug('=======> Disconnected')
         return
 
@@ -256,8 +293,7 @@ class GameConsumer(ActionHandlerMixin, BroadcastMixin, AsyncWebsocketConsumer):
 
         await handler_func(data, game)
 
-    async def broadcast_server_state(self):
-        game = await get_or_create_game()
+    async def broadcast_server_state(self, game):
         visitor_names, participant_names = await get_game_visitors_participants_names(game)
         response_data = {
             'action': 'server_state',

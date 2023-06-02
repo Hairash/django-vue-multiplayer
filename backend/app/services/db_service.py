@@ -172,3 +172,40 @@ def toggle_active_players(game):
     for player in active_players:
         game.active_players.add(player)
     game.save()
+
+
+@database_sync_to_async
+def get_participants(game):
+    return list(game.participants.all())
+
+
+@database_sync_to_async
+def get_player_hand(player):
+    return player.hand
+
+
+@database_sync_to_async
+def play_card_to_table(game, player, card_dict):
+    player.hand.remove(card_dict)
+    game.table.append(card_dict)
+    player.save()
+    game.save()
+
+
+@database_sync_to_async
+def get_table(game):
+    return game.table
+
+
+@database_sync_to_async
+def take_cards_from_table(game, player):
+    player.hand += game.table
+    game.table = []
+    player.save()
+    game.save()
+
+
+@database_sync_to_async
+def clear_table(game):
+    game.table = []
+    game.save()

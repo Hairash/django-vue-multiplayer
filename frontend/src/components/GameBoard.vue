@@ -5,9 +5,22 @@
     <p>Current state: {{ currentState }}</p>
     <button @click='connectToGame' :disabled='currentState !== states.loggedIn'>Connect</button>
     <button @click='startGame' :disabled='currentState !== states.connected'>Start</button>
-    <button @click='play' :disabled='!isPlayEnabled()'>Play</button>
+    <br />
     <button @click='take' :disabled='!isTakeEnabled()'>Take</button>
     <button @click='pass' :disabled='!isPassEnabled()'>Pass</button>
+    <br />
+    Cards
+    <button v-for='card in cards'
+      :key='card.rank + card.suit'
+      @click='play(card)'
+      :disabled='!isPlayEnabled()'>
+      {{ card.rank }}{{ card.suit }}
+    </button>
+    <br />
+    Table
+    <label v-for='card in gameState.table' :key='card.rank + card.suit'>
+      {{ card.rank }}{{ card.suit }}
+    </label>
     <br />
     <button @click='sendMove' :disabled='currentState !== states.playing'>Make a Move</button>
     <button @click='broadcast' :disabled='currentState !== states.playing'>To all</button>
@@ -34,12 +47,14 @@ export default {
       visitors: [],
       // TODO: Make an enum
       serverState: 'wait',
-      gameState: {},
       clientPlayer: null,
       // TODO: Refactor it - remove and use this.clientState
       currentState: clientState.currentState,
       states: clientState.states,
       stateData: clientState.stateData,
+
+      gameState: {},
+      cards: [],
     };
   },
   mounted() {
@@ -62,6 +77,9 @@ export default {
 
       this.socket.addEventListener('message', (event) => {
         const data = JSON.parse(event.data);
+        if (data.action === 'hand') {
+          this.cards = data.cards;
+        }
         if (data.action === 'game_state') {
           this.gameState = data;
         }
@@ -91,8 +109,8 @@ export default {
     endGame() {
       this.socket.send(JSON.stringify({ action: 'end' }));
     },
-    play() {
-      this.socket.send(JSON.stringify({ action: 'play' }));
+    play(card) {
+      this.socket.send(JSON.stringify({ action: 'play', card: card, player: this.clientPlayer }));
     },
     take() {
       this.socket.send(JSON.stringify({ action: 'take' }));

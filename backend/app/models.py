@@ -3,9 +3,57 @@ from django.contrib.auth.models import User
 from django.contrib.postgres.fields import ArrayField
 
 
+class Card:
+    class SUITS:
+        HEARTS = 'H'
+        DIAMONDS = 'D'
+        CLUBS = 'C'
+        SPADES = 'S'
+
+    def __init__(self, rank, suit):
+        self.rank = rank
+        self.suit = suit
+
+    def to_dict(self):
+        return {
+            'rank': self.rank,
+            'suit': self.suit
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(data['rank'], data['suit'])
+
+    def __str__(self):
+        return f'{self.rank}{self.suit}'
+
+    # RANKS = [(i, str(i)) for i in range(1, 14)]  # assuming a range of 1-13 (Ace through King)
+
+    # rank = models.PositiveSmallIntegerField()
+    # suit = models.CharField(max_length=1, choices=SUITS)
+    #
+    # order_in_deck = models.PositiveIntegerField(null=True, blank=True)
+    # game = models.ForeignKey(
+    #     'Game',
+    #     related_name='deck',
+    #     null=True,
+    #     blank=True,
+    #     on_delete=models.SET_NULL
+    # )
+    # player = models.ForeignKey(
+    #     'Player',
+    #     related_name='hand',
+    #     null=True,
+    #     blank=True,
+    #     on_delete=models.SET_NULL
+    # )
+    #
+
+
 class Player(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, null=True)
     channel_name = models.CharField(max_length=255)
+    hand = models.JSONField(default=list)
 
 
 class Game(models.Model):
@@ -44,3 +92,5 @@ class Game(models.Model):
         blank=True,
         default=list,
     )
+    deck = models.JSONField(default=list)
+    table = models.JSONField(default=list)
