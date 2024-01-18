@@ -255,6 +255,8 @@ class GameConsumer(ActionHandlerMixin, BroadcastMixin, AsyncWebsocketConsumer):
         game = await get_or_create_game()
         player = await create_player(self.channel_name)
         await add_visitor_to_game(game, player)
+        # TODO: Add check if participant connected (if not - don't change state)
+        # TODO: If yes - restart the game
 
         await self.channel_layer.group_add(
             self.get_user_group_name(self.channel_name),
