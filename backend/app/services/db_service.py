@@ -29,6 +29,11 @@ def create_player(channel_name, user=None):
 
 
 @database_sync_to_async
+def get_game_with_lock():
+    game, _ = Game.objects.select_for_update().get(pk=1)
+    return game
+
+@database_sync_to_async
 def get_or_create_game():
     game, _ = Game.objects.get_or_create(pk=1)
     return game

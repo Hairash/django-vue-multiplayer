@@ -1,8 +1,8 @@
-from asyncio import Lock
 import json
 import logging
 
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.db import transaction
 
 from app.services.helpers import GameError
 from app.services.db_service import (
@@ -16,6 +16,7 @@ from app.services.db_service import (
     get_current_player,
     get_current_player_user_name,
     get_game_visitors_participants_names,
+    get_game_with_lock,
     get_next_player,
     get_or_create_game,
     get_participants,
@@ -52,7 +53,6 @@ from app.models import Game
 
 
 logger = logging.getLogger('django_vue_multiplayer')
-lock = Lock()
 
 
 class BroadcastMixin(AsyncWebsocketConsumer):
@@ -126,50 +126,48 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
     #==========================================#
 
     async def handle_play(self, data, game):
-        lock = Lock()
-        async with lock:
-            active_player = await get_player_by_channel_name(game, self.channel_name)
-            if not await self.check_action_allowed(game, active_player):
-                return
+        active_player = await get_player_by_channel_name(game, self.channel_name)
+        if not await self.check_action_allowed(game, active_player):
+            return
 
-            card_dict = data['card']
-            try:
-                await play_card_to_table(game, active_player, card_dict)
-            except GameError as e:
-                await self.send_error(str(e))
-                return
+        card_dict = data['card']
+        try:
+            await play_card_to_table(game, active_player, card_dict)
+        except GameError as e:
+            await self.send_error(str(e))
+            return
 
-            current_player = await get_current_player(game)
-            defender = await get_next_player(game, current_player)
-            next_player = await get_next_player(game, defender)
+        current_player = await get_current_player(game)
+        defender = await get_next_player(game, current_player)
+        next_player = await get_next_player(game, defender)
 
-            # If all allowed cards were played in the round
-            if await check_stop_attack(game, defender):
-                if game.phase == Game.Phases.DEFENSE:
-                    await clear_table(game)
-                    await set_current_player(game, defender)
-                elif game.phase == Game.Phases.ADDITION:
-                    await take_cards_from_table(game, defender)
-                    await set_current_player(game, next_player)
-
-                await self.process_end_of_turn(game)
-
-            # Attackers add cards to defender's hand
+        # If all allowed cards were played in the round
+        if await check_stop_attack(game, defender):
+            if game.phase == Game.Phases.DEFENSE:
+                await clear_table(game)
+                await set_current_player(game, defender)
             elif game.phase == Game.Phases.ADDITION:
-                pass
+                await take_cards_from_table(game, defender)
+                await set_current_player(game, next_player)
 
-            # Usual cases
+            await self.process_end_of_turn(game)
+
+        # Attackers add cards to defender's hand
+        elif game.phase == Game.Phases.ADDITION:
+            pass
+
+        # Usual cases
+        else:
+            phase = await toggle_phase(game)
+            if phase == Game.Phases.ATTACK:
+                await toggle_active_players(game)
+                await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
             else:
-                phase = await toggle_phase(game)
-                if phase == Game.Phases.ATTACK:
-                    await toggle_active_players(game)
-                    await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
-                else:
-                    await set_active_players(game, [defender])
-                    await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.TAKE])
+                await set_active_players(game, [defender])
+                await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.TAKE])
 
-            await self.broadcast_game_state(game)
-            await self.send_all_player_hands(game)
+        await self.broadcast_game_state(game)
+        await self.send_all_player_hands(game)
     #==========================================#
 
     async def handle_take(self, data, game):
@@ -347,19 +345,20 @@ class GameConsumer(ActionHandlerMixin, BroadcastMixin, AsyncWebsocketConsumer):
 
     async def receive(self, text_data):
         data = json.loads(text_data)
-        game = await get_or_create_game()
+        with transaction.atomic():
+            game = await get_game_with_lock()
 
-        action = data.get('action', None)
-        if not action:
-            # TODO: Refactoring. Make list of actions to response
-            await self.send_error('Bad message - no "action" field')
-            return
-        handler_func = self.action_handler_funcs.get(action, None)
-        if not handler_func:
-            await self.send_error('Bad message - unknown action: {action}')
-            return
+            action = data.get('action', None)
+            if not action:
+                # TODO: Refactoring. Make list of actions to response
+                await self.send_error('Bad message - no "action" field')
+                return
+            handler_func = self.action_handler_funcs.get(action, None)
+            if not handler_func:
+                await self.send_error('Bad message - unknown action: {action}')
+                return
 
-        await handler_func(data, game)
+            await handler_func(data, game)
 
     async def broadcast_server_state(self, game):
         visitor_names, participant_names = await get_game_visitors_participants_names(game)
