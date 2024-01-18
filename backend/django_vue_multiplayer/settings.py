@@ -28,39 +28,17 @@ DEBUG = False
 
 ALLOWED_HOSTS = [
     '*',
+    # TODO: Check, do we need it on PROD
     # 'durak-game-backend.onrender.com',
     # 'localhost',
     # '127.0.0.1'
 ]
 
 # For development purposes, you can allow any origin
+# TODO: Check, do we need it on PROD
 CORS_ALLOWED_ORIGINS = [
     'https://durak-game-frontend.onrender.com',
 ]
-
-# CORS_ALLOW_CREDENTIALS = True
-
-# CORS_ALLOW_METHODS = [
-#     'DELETE',
-#     'GET',
-#     'OPTIONS',
-#     'PATCH',
-#     'POST',
-#     'PUT',
-# ]
-
-# CORS_ALLOW_HEADERS = [
-#     'accept',
-#     'accept-encoding',
-#     'authorization',
-#     'content-type',
-#     'dnt',
-#     'origin',
-#     'user-agent',
-#     'x-csrftoken',
-#     'x-requested-with',
-# ]
-
 
 # Application definition
 
@@ -76,6 +54,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'app',
     'user_auth',
+    # TODO: Check, do we need it on PROD
     'corsheaders',
 ]
 
