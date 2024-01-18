@@ -179,6 +179,10 @@ def toggle_active_players(game):
     game.save()
 
 
+# def _get_participants(game):
+#     return list(game.participants.order_by('id').all())
+
+
 @database_sync_to_async
 def get_participants(game):
     return list(game.participants.order_by('id').all())
