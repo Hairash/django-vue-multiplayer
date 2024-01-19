@@ -6,11 +6,11 @@ const stateData = reactive({
   isPlaying: false,
 });
 
-// TODO: Add wait state - if you connected, but the game has been already started
 const states = {
   new: 'new',
   loggedIn: 'loggedIn',
   connected: 'connected',
+  waiting: 'waiting',
   playing: 'playing',
 }
 
@@ -19,8 +19,10 @@ const currentState = computed(() => {
     return states.new;
   } else if (!stateData.isConnected) {
     return states.loggedIn;
-  } else if (!stateData.isPlaying) {
+  } else if (!stateData.isWaiting) {
     return states.connected;
+  } else if (!stateData.isPlaying) {
+    return states.waiting;
   } else {
     return states.playing;
   }
@@ -34,8 +36,12 @@ function checkConnected(socket) {
   stateData.isConnected = !!socket;
 }
 
-function checkPlaying(serverState) {
-  stateData.isPlaying = serverState === 'game';
+function checkWaiting(serverState) {
+  stateData.isWaiting = serverState === 'game';
+}
+
+function checkPlaying(participants, player) {
+  stateData.isPlaying = participants.includes(player);
 }
 
 export default {
@@ -44,5 +50,6 @@ export default {
   currentState,
   checkLoggedIn,
   checkConnected,
+  checkWaiting,
   checkPlaying,
 };

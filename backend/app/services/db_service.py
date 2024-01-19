@@ -61,15 +61,15 @@ def get_player_by_channel_name(game, channel_name):
 
 @database_sync_to_async
 def get_next_player(game, player):
-    players = list(game.participants.all())
+    players = list(game.participants.order_by('id').all())
     idx = players.index(player)
     return players[(idx + 1) % len(players)]
 
 
 @database_sync_to_async
 def get_game_visitors_participants_names(game):
-    visitor_names = [player.user.username for player in game.visitors.all()]
-    participant_names = [player.user.username for player in game.participants.all()]
+    visitor_names = [getattr(getattr(player, 'user'), 'username', '???') for player in game.visitors.all()]
+    participant_names = [getattr(getattr(player, 'user'), 'username', '???') for player in game.participants.all()]
     return visitor_names, participant_names
 
 
@@ -176,7 +176,8 @@ def toggle_active_players(game):
 
 @database_sync_to_async
 def get_participants(game):
-    return list(game.participants.all())
+    return list(game.participants.order_by('id').all())
+
 
 
 @database_sync_to_async
@@ -207,5 +208,24 @@ def take_cards_from_table(game, player):
 
 @database_sync_to_async
 def clear_table(game):
+    game.table = []
+    game.save()
+
+
+@database_sync_to_async
+def is_player_participant(game, player):
+    return game.participants.filter(id=player.id).exists()
+
+
+@database_sync_to_async
+def end_game(game):
+    game.state = Game.States.WAIT
+    game.participants.update(hand=[])
+    game.participants.clear()
+    game.current_player = None
+    game.phase = Game.Phases.ATTACK
+    game.active_players.clear()
+    game.allowed_actions = []
+    game.deck = []
     game.table = []
     game.save()

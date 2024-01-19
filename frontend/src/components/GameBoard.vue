@@ -22,11 +22,9 @@
       {{ card.rank }}{{ card.suit }}
     </label>
     <br />
-    <button @click='sendMove' :disabled='currentState !== states.playing'>Make a Move</button>
-    <button @click='broadcast' :disabled='currentState !== states.playing'>To all</button>
-    <button @click='sendNext' :disabled='currentState !== states.playing'>To the next</button>
     <button @click='endGame' :disabled='currentState !== states.playing'>End</button>
-    <PlayersList :players=visitors />
+    <PlayersList header='Connected players' :players=visitors />
+    <PlayersList header='Active players' :players=participants />
   </div>
 </template>
 
@@ -45,10 +43,11 @@ export default {
     return {
       socket: null,
       visitors: [],
-      // TODO: Make an enum
+      participants: [],
+      // TODO: Refactoring. Make an enum
       serverState: 'wait',
       clientPlayer: null,
-      // TODO: Refactor it - remove and use this.clientState
+      // TODO: Refactoring. Remove and use this.clientState
       currentState: clientState.currentState,
       states: clientState.states,
       stateData: clientState.stateData,
@@ -63,7 +62,6 @@ export default {
   },
   methods: {
     connectToGame() {
-      console.log(this.socket);
       if (this.socket) return;
       this.socket = new WebSocket('ws://localhost:8000/ws/game/');
       this.clientState.checkConnected(this.socket);
@@ -72,7 +70,6 @@ export default {
         console.log('WebSocket connected:', event);
         const token = localStorage.getItem('token');
         this.socket.send(JSON.stringify({ action: 'authenticate', token: token }));
-        console.log(token);
       });
 
       this.socket.addEventListener('message', (event) => {
@@ -85,8 +82,10 @@ export default {
         }
         else if (data.action === 'server_state') {
           this.visitors = data.visitors;
+          this.participants = data.participants;
           this.serverState = data.state;
-          this.clientState.checkPlaying(this.serverState);
+          this.clientState.checkWaiting(this.serverState);
+          this.clientState.checkPlaying(this.participants, this.clientPlayer);
         }
         else if (data.action === 'error') {
           alert(data.message);
@@ -107,7 +106,9 @@ export default {
       this.socket.send(JSON.stringify({ action: 'start' }));
     },
     endGame() {
-      this.socket.send(JSON.stringify({ action: 'end' }));
+      if (window.confirm("Are you sure you want to end the game?")) {
+        this.socket.send(JSON.stringify({ action: 'end' }));
+      }
     },
     play(card) {
       this.socket.send(JSON.stringify({ action: 'play', card: card, player: this.clientPlayer }));
@@ -118,10 +119,11 @@ export default {
     pass() {
       this.socket.send(JSON.stringify({ action: 'pass' }));
     },
-    // TODO: Refactor - make one function
+    // TODO: Refactoring. Make one function
     isPlayEnabled() {
       return (
         this.currentState === this.states.playing && this.clientPlayer &&
+        Object.keys(this.gameState).length &&
         this.gameState.active_players.includes(this.clientPlayer) &&
         this.gameState.allowed_actions.includes('play')
       )
@@ -129,6 +131,7 @@ export default {
     isTakeEnabled() {
       return (
         this.currentState === this.states.playing && this.clientPlayer &&
+        Object.keys(this.gameState).length &&
         this.gameState.active_players.includes(this.clientPlayer) &&
         this.gameState.allowed_actions.includes('take')
       )
@@ -136,33 +139,11 @@ export default {
     isPassEnabled() {
       return (
         this.currentState === this.states.playing && this.clientPlayer &&
+        Object.keys(this.gameState).length &&
         this.gameState.active_players.includes(this.clientPlayer) &&
         this.gameState.allowed_actions.includes('pass')
       )
     },
-    sendMove() {
-      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-        const moveData = {}; // TODO: Replace with your actual move data
-        this.socket.send(JSON.stringify({ action: 'question', ...moveData }));
-      } else {
-        console.error('WebSocket is not open. readyState:', this.socket.readyState);
-      }
-    },
-    broadcast() {
-      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-        this.socket.send(JSON.stringify({ action: 'everybody' }));
-      } else {
-        console.error('WebSocket is not open. readyState:', this.socket.readyState);
-      }
-    },
-    sendNext() {
-      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-        this.socket.send(JSON.stringify({ action: 'next' }));
-      } else {
-        console.error('WebSocket is not open. readyState:', this.socket.readyState);
-      }
-    },
-    // Add additional methods for handling game logic and making HTTP requests to the server
   },
 };
 </script>

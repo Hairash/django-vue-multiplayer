@@ -1,6 +1,6 @@
 <template>
   <div>
-    <h3>Connected Players:</h3>
+    <h3>{{ header }}</h3>
     <ul>
       <li v-for="player in players" :key="player">{{ player }}</li>
     </ul>
@@ -10,6 +10,7 @@
 <script>
 export default {
   props: {
+    header: String,
     players: Array,
   },
 };

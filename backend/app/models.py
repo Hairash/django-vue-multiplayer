@@ -27,28 +27,6 @@ class Card:
     def __str__(self):
         return f'{self.rank}{self.suit}'
 
-    # RANKS = [(i, str(i)) for i in range(1, 14)]  # assuming a range of 1-13 (Ace through King)
-
-    # rank = models.PositiveSmallIntegerField()
-    # suit = models.CharField(max_length=1, choices=SUITS)
-    #
-    # order_in_deck = models.PositiveIntegerField(null=True, blank=True)
-    # game = models.ForeignKey(
-    #     'Game',
-    #     related_name='deck',
-    #     null=True,
-    #     blank=True,
-    #     on_delete=models.SET_NULL
-    # )
-    # player = models.ForeignKey(
-    #     'Player',
-    #     related_name='hand',
-    #     null=True,
-    #     blank=True,
-    #     on_delete=models.SET_NULL
-    # )
-    #
-
 
 class Player(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, null=True)
@@ -82,6 +60,7 @@ class Game(models.Model):
         related_name='games_as_current_player',
     )
     phase = models.CharField(max_length=7, choices=Phases.choices, default=Phases.ATTACK)
+    # active_players - who may take actions right now
     active_players = models.ManyToManyField(
         Player,
         blank=True,
