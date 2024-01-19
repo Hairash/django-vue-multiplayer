@@ -3,7 +3,8 @@ import logging
 from channels.db import database_sync_to_async
 from rest_framework.authtoken.models import Token
 
-from app.models import Game, Player
+from app.models import Card, Game, Player
+from app.services.helpers import GameError
 
 
 logger = logging.getLogger('django_vue_multiplayer')
@@ -187,6 +188,8 @@ def get_player_hand(player):
 
 @database_sync_to_async
 def play_card_to_table(game, player, card_dict):
+    if not card_dict in player.hand:
+        raise GameError(f'You have no such card in your hand: {str(Card(**card_dict))}')
     player.hand.remove(card_dict)
     game.table.append(card_dict)
     player.save()
@@ -229,3 +232,7 @@ def end_game(game):
     game.deck = []
     game.table = []
     game.save()
+
+@database_sync_to_async
+def is_player_in_active_players(game, player):
+    return game.active_players.filter(id=player.id).exists()

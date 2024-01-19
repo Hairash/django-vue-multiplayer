@@ -20,12 +20,22 @@ class Card:
             'suit': self.suit
         }
 
+    @staticmethod
+    def suit_to_emoji(suit):
+        suit_emoji_dict = {
+            'H': '♥',
+            'D': '♦',
+            'C': '♣',
+            'S': '♠',
+        }
+        return suit_emoji_dict[suit]
+
     @classmethod
     def from_dict(cls, data):
         return cls(data['rank'], data['suit'])
 
     def __str__(self):
-        return f'{self.rank}{self.suit}'
+        return f'{self.rank}{self.suit_to_emoji(self.suit)}'
 
 
 class Player(models.Model):

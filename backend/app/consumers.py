@@ -3,12 +3,15 @@ import logging
 
 from channels.generic.websocket import AsyncWebsocketConsumer
 
+from app.services.helpers import GameError
+
 from .services.db_service import (
     end_game,
     get_user_by_token,
     create_player,
     get_or_create_game,
     add_visitor_to_game,
+    is_player_in_active_players,
     is_player_participant,
     update_player_user,
     get_player_by_user,
@@ -48,13 +51,12 @@ logger = logging.getLogger('django_vue_multiplayer')
 
 
 class BroadcastMixin(AsyncWebsocketConsumer):
-    # TODO: Refactoring. Change to broadcast_data (move json.dumps to the function)
-    async def broadcast_message(self, message):
+    async def broadcast_data(self, data):
         await self.channel_layer.group_send(
             'all',
             {
                 'type': 'send_message_to_group',
-                'message': message,
+                'message': json.dumps(data),
             },
         )
 
@@ -80,7 +82,6 @@ class BroadcastMixin(AsyncWebsocketConsumer):
 
 
 class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
-    # TODO: Logic. If state == GAME, ignore messages from watchers
     async def handle_authenticate(self, data, game):
         token_key = data['token']
         user = await get_user_by_token(token_key)
@@ -94,13 +95,17 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
             await self.send(json.dumps({'action': 'authenticated'}))
             await self.broadcast_server_state(game)
         elif not user:
-            await self.send(json.dumps({'action': 'error', 'message': 'Invalid token. Please re-login'}))
+            await self.send_error('Invalid token. Please re-login')
             await self.close()
         else:
-            await self.send(json.dumps({'action': 'error', 'message': 'User is already connected'}))
+            await self.send_error('User is already connected')
             await self.close()
 
     async def handle_start(self, data, game):
+        if game.state != Game.States.WAIT:
+            await self.send_error('Game has been already started')
+            return
+
         await set_game_state(game, Game.States.GAME)
         await init_participants(game)
         await self.broadcast_server_state(game)
@@ -115,14 +120,22 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
 
     async def handle_play(self, data, game):
         active_player = await get_player_by_channel_name(game, self.channel_name)
-        # TODO: Logic. Check is it possible to make turn - if active_player in game.active_players
-        # TODO: Logic. Check does the player really have such a card
-        # TODO: Logic. Protect from double click - add checks on backend methods
+        if not is_player_participant(game, active_player):
+            await self.send_error('Game is already in progress. Please wait for the end of the game.')
+            return
+        if not is_player_in_active_players(game, active_player):
+            await self.send_error('Please wait for your turn')
+            return
+
+        card_dict = data['card']
+        try:
+            await play_card_to_table(game, active_player, card_dict)
+        except GameError as e:
+            await self.send_error(str(e))
+            return
+
         current_player = await get_current_player(game)
         defender = await get_next_player(game, current_player)
-        # await set_current_player(game, next_player)
-        card_dict = data['card']
-        await play_card_to_table(game, active_player, card_dict)
 
         phase = await toggle_phase(game)
         if phase == Game.Phases.ATTACK:
@@ -137,6 +150,7 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
 
     # TODO: Logic. If current player out of cards, remove them from participants and change current player
 
+    # TODO: Logic. If state == GAME, ignore messages from watchers
     async def handle_take(self, data, game):
         active_player = await get_player_by_channel_name(game, self.channel_name)
         current_player = await get_current_player(game)
@@ -174,6 +188,8 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
         await end_game(game)
         await self.broadcast_server_state(game)
 
+    # Messaging helpers
+
     async def send_player_hand(self, player):
         cards = await get_player_hand(player)
         data = {'action': 'hand', 'cards': cards}
@@ -198,7 +214,11 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
             'allowed_actions': allowed_actions,
             'table': table,
         }
-        await self.broadcast_message(json.dumps(response_data))
+        await self.broadcast_data(response_data)
+
+    async def send_error(self, error_message):
+        data = {'action': 'error', 'message': error_message}
+        await self.send(json.dumps(data))
 
 
 class GameConsumer(ActionHandlerMixin, BroadcastMixin, AsyncWebsocketConsumer):
@@ -218,7 +238,7 @@ class GameConsumer(ActionHandlerMixin, BroadcastMixin, AsyncWebsocketConsumer):
         logger.debug(f'=====> Group: {self.get_user_group_name(self.channel_name)}')
 
         response_data = {'action': 'connected', 'player': self.get_user_short_name(self.channel_name)}
-        await self.broadcast_message(json.dumps(response_data))
+        await self.broadcast_data(response_data)
 
         game = await get_or_create_game()
         player = await create_player(self.channel_name)
@@ -257,7 +277,7 @@ class GameConsumer(ActionHandlerMixin, BroadcastMixin, AsyncWebsocketConsumer):
 
         # TODO: Beautify. Send real player's name
         response_data = {'action': 'disconnected', 'player': self.get_user_short_name(self.channel_name)}
-        await self.broadcast_message(json.dumps(response_data))
+        await self.broadcast_data(response_data)
         # TODO: Beautify. Think, maybe we need to send a special message to notify users
         logger.debug(f'=====> Disconnected')
         return
@@ -269,11 +289,11 @@ class GameConsumer(ActionHandlerMixin, BroadcastMixin, AsyncWebsocketConsumer):
         action = data.get('action', None)
         if not action:
             # TODO: Refactoring. Make list of actions to response
-            await self.send(json.dumps({'action': 'error', 'message': 'Bad message - no "action" field'}))
+            await self.send_error('Bad message - no "action" field')
             return
         handler_func = self.action_handler_funcs.get(action, None)
         if not handler_func:
-            await self.send(json.dumps({'action': 'error', 'message': f'Bad message - unknown action: {action}'}))
+            await self.send_error('Bad message - unknown action: {action}')
             return
 
         await handler_func(data, game)
@@ -286,4 +306,4 @@ class GameConsumer(ActionHandlerMixin, BroadcastMixin, AsyncWebsocketConsumer):
             'visitors': visitor_names,
             'participants': participant_names,
         }
-        await self.broadcast_message(json.dumps(response_data))
+        await self.broadcast_data(response_data)
