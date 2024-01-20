@@ -87,6 +87,9 @@ export default {
           this.clientState.checkWaiting(this.serverState);
           this.clientState.checkPlaying(this.participants, this.clientPlayer);
         }
+        else if (data.action === 'info') {
+          alert(data.message);
+        }
         else if (data.action === 'error') {
           alert(data.message);
         }
@@ -148,7 +151,7 @@ export default {
         this.gameState.allowed_actions.includes('pass')
       )
     },
-    debounceReactivation(delay = 500) {
+    debounceReactivation(delay = 1500) {
       this.isDebounceActive = true;
       setTimeout(() => {
         this.isDebounceActive = false;

@@ -4,10 +4,15 @@ from channels.db import database_sync_to_async
 
 from app.models import Card, Game
 from app.services.db_service import (
+    get_deck,
+    get_next_player,
     get_player_hand,
     get_participants,
+    get_table,
+    remove_player_from_participants,
     set_active_players,
     set_allowed_actions,
+    set_current_player,
     set_phase,
 )
 
@@ -65,6 +70,24 @@ async def replenish_all_player_hands(game):
 
 async def start_new_turn(game, current_player):
     await replenish_all_player_hands(game)
+    print('Cards left:', len(await get_deck(game)))
+    # Remove players with no cards
+    while not await get_player_hand(current_player) and await get_participants(game):
+        next_player = await get_next_player(game, current_player)
+        await remove_player_from_participants(game, current_player)
+        current_player = await set_current_player(game, next_player)
+    for player in await get_participants(game):
+        if not await get_player_hand(player):
+            await remove_player_from_participants(game, player)
+
     await set_phase(game, Game.Phases.ATTACK)
     await set_active_players(game, [current_player])
     await set_allowed_actions(game, [Game.Actions.PLAY])
+
+
+async def check_stop_attack(game, defender):
+    if not await get_player_hand(defender):
+        return True
+    if len(await get_table(game)) >= CARDS_IN_HAND * 2:
+        return True
+    return False

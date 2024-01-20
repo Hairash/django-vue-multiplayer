@@ -6,6 +6,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from app.services.helpers import GameError
 
 from .services.db_service import (
+    check_end_game,
     end_game,
     get_user_by_token,
     create_player,
@@ -13,6 +14,7 @@ from .services.db_service import (
     add_visitor_to_game,
     is_player_in_active_players,
     is_player_participant,
+    prepare_end_game_message,
     update_player_user,
     get_player_by_user,
     get_player_by_channel_name,
@@ -28,7 +30,6 @@ from .services.db_service import (
     get_phase,
     get_active_player_names,
     get_allowed_actions,
-    set_phase,
     set_active_players,
     set_allowed_actions,
     toggle_phase,
@@ -41,6 +42,7 @@ from .services.db_service import (
     clear_table,
 )
 from .services.game_service import (
+    check_stop_attack,
     generate_deck,
     start_new_turn,
 )
@@ -134,18 +136,27 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
         current_player = await get_current_player(game)
         defender = await get_next_player(game, current_player)
 
-        phase = await toggle_phase(game)
-        if phase == Game.Phases.ATTACK:
-            await toggle_active_players(game)
-            await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
+        # If all allowed cards were played in the round
+        if game.phase == Game.Phases.DEFENSE and await check_stop_attack(game, defender):
+            await clear_table(game)
+            current_player = await set_current_player(game, defender)
+            await self.send_all_player_hands(game)
+            await start_new_turn(game, current_player)
+            await self.check_and_process_end_game(game)
+
+        # Usual cases
         else:
-            await set_active_players(game, [defender])
-            await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.TAKE])
+            phase = await toggle_phase(game)
+            if phase == Game.Phases.ATTACK:
+                await toggle_active_players(game)
+                await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
+            else:
+                await set_active_players(game, [defender])
+                await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.TAKE])
 
         await self.broadcast_game_state(game)
         await self.send_all_player_hands(game)
-
-    # TODO: Logic. If current player out of cards, remove them from participants and change current player
+        await self.broadcast_server_state(game)
 
     async def handle_take(self, data, game):
         active_player = await get_player_by_channel_name(game, self.channel_name)
@@ -159,13 +170,15 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
         current_player = await get_current_player(game)
         defender = await get_next_player(game, current_player)
         next_player = await get_next_player(game, defender)
+        current_player = await set_current_player(game, next_player)
+        await self.broadcast_game_state(game)
 
         await take_cards_from_table(game, active_player)
-        current_player = await set_current_player(game, next_player)
         await start_new_turn(game, current_player)
-
         await self.broadcast_game_state(game)
         await self.send_all_player_hands(game)
+        await self.check_and_process_end_game(game)
+        await self.broadcast_server_state(game)
 
     async def handle_pass(self, data, game):
         active_player = await get_player_by_channel_name(game, self.channel_name)
@@ -186,10 +199,13 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
         current_player = await get_current_player(game)
         next_player = await get_next_player(game, current_player)
         current_player = await set_current_player(game, next_player)
+        await self.broadcast_game_state(game)
 
         await start_new_turn(game, current_player)
         await self.broadcast_game_state(game)
         await self.send_all_player_hands(game)
+        await self.check_and_process_end_game(game)
+        await self.broadcast_server_state(game)
 
     async def handle_end(self, data, game):
         active_player = await get_player_by_channel_name(game, self.channel_name)
@@ -199,6 +215,15 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
 
         await end_game(game)
         await self.broadcast_server_state(game)
+
+    # Action helpers
+
+    async def check_and_process_end_game(self, game):
+        if await check_end_game(game):
+            end_game_message = await prepare_end_game_message(game)
+            # await self.broadcast_game_state(game)
+            await self.broadcast_data({'action': 'info', 'message': end_game_message})
+            await end_game(game)
 
     # Messaging helpers
 

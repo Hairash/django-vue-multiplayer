@@ -182,6 +182,7 @@ def get_participants(game):
 
 @database_sync_to_async
 def get_player_hand(player):
+    player = Player.objects.get(id=player.id)
     return player.hand
 
 
@@ -236,3 +237,29 @@ def end_game(game):
 @database_sync_to_async
 def is_player_in_active_players(game, player):
     return game.active_players.filter(id=player.id).exists()
+
+
+@database_sync_to_async
+def remove_player_from_participants(game, player):
+    game.participants.remove(player)
+
+
+@database_sync_to_async
+def get_deck(game):
+    return game.deck
+
+
+@database_sync_to_async
+def check_end_game(game):
+    return len(game.participants.all()) <= 1
+
+
+@database_sync_to_async
+def prepare_end_game_message(game):
+    msg = 'End of game. '
+    participants = game.participants.all()
+    if len(participants) == 1:
+        msg += f'{participants[0].user.username} lost'
+    elif len(participants) == 0:
+        msg += 'Draw'
+    return msg
