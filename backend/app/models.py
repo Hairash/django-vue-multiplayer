@@ -46,8 +46,9 @@ class Player(models.Model):
 
 class Game(models.Model):
     class States(models.TextChoices):
-        WAIT = 'wait', 'Wait'
+        NOT_STARTED = 'not_started', 'Not started'
         GAME = 'game', 'Game'
+        WAIT = 'wait', 'Wait'  # not used for now
 
     class Phases(models.TextChoices):
         ATTACK = 'attack', 'Attack'
@@ -58,7 +59,7 @@ class Game(models.Model):
         TAKE = 'take', 'Take'
         PASS = 'pass', 'Pass'
 
-    state = models.CharField(max_length=4, choices=States.choices, default=States.WAIT)
+    state = models.CharField(max_length=15, choices=States.choices, default=States.NOT_STARTED)
     visitors = models.ManyToManyField(Player, blank=True, related_name="games_as_visitors")
     participants = models.ManyToManyField(Player, blank=True, related_name="games_as_participants")
     # current_player - which turn (change after end of turn - beaten or taken, or redirect)

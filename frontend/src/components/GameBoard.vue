@@ -5,6 +5,7 @@
     <p>Current state: {{ currentState }}</p>
     <button @click='connectToGame' :disabled='currentState !== states.loggedIn'>Connect</button>
     <button @click='startGame' :disabled='currentState !== states.connected'>Start</button>
+    <button @click='endGame' :disabled='currentState !== states.playing'>End</button>
     <br />
     <button @click='take' :disabled='!isTakeEnabled()'>Take</button>
     <button @click='pass' :disabled='!isPassEnabled()'>Pass</button>
@@ -21,8 +22,6 @@
     <label v-for='card in gameState.table' :key='card.rank + card.suit'>
       {{ card.rank }}{{ card.suit }}
     </label>
-    <br />
-    <button @click='endGame' :disabled='currentState !== states.playing'>End</button>
     <PlayersList header='Connected players' :players=visitors />
     <PlayersList header='Active players' :players=participants />
   </div>
@@ -45,7 +44,7 @@ export default {
       visitors: [],
       participants: [],
       // TODO: Refactoring. Make an enum
-      serverState: 'wait',
+      serverState: 'not_started',
       clientPlayer: null,
       // TODO: Refactoring. Remove and use this.clientState
       currentState: clientState.currentState,
@@ -54,6 +53,7 @@ export default {
 
       gameState: {},
       cards: [],
+      isDebounceActive: false,
     };
   },
   mounted() {
@@ -115,9 +115,11 @@ export default {
     },
     take() {
       this.socket.send(JSON.stringify({ action: 'take' }));
+      this.debounceReactivation();
     },
     pass() {
       this.socket.send(JSON.stringify({ action: 'pass' }));
+      this.debounceReactivation();
     },
     // TODO: Refactoring. Make one function
     isPlayEnabled() {
@@ -130,6 +132,7 @@ export default {
     },
     isTakeEnabled() {
       return (
+        !this.isDebounceActive &&
         this.currentState === this.states.playing && this.clientPlayer &&
         Object.keys(this.gameState).length &&
         this.gameState.active_players.includes(this.clientPlayer) &&
@@ -138,11 +141,18 @@ export default {
     },
     isPassEnabled() {
       return (
+        !this.isDebounceActive &&
         this.currentState === this.states.playing && this.clientPlayer &&
         Object.keys(this.gameState).length &&
         this.gameState.active_players.includes(this.clientPlayer) &&
         this.gameState.allowed_actions.includes('pass')
       )
+    },
+    debounceReactivation(delay = 500) {
+      this.isDebounceActive = true;
+      setTimeout(() => {
+        this.isDebounceActive = false;
+      }, delay);
     },
   },
 };

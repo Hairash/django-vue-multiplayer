@@ -222,7 +222,7 @@ def is_player_participant(game, player):
 
 @database_sync_to_async
 def end_game(game):
-    game.state = Game.States.WAIT
+    game.state = Game.States.NOT_STARTED
     game.participants.update(hand=[])
     game.participants.clear()
     game.current_player = None

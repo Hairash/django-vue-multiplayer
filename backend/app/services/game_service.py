@@ -2,10 +2,13 @@ import random
 
 from channels.db import database_sync_to_async
 
-from app.models import Card
+from app.models import Card, Game
 from app.services.db_service import (
     get_player_hand,
     get_participants,
+    set_active_players,
+    set_allowed_actions,
+    set_phase,
 )
 
 
@@ -58,3 +61,10 @@ async def replenish_all_player_hands(game):
     participants = await get_participants(game)
     for player in participants:
         await replenish_hand(game, player)
+
+
+async def start_new_turn(game, current_player):
+    await replenish_all_player_hands(game)
+    await set_phase(game, Game.Phases.ATTACK)
+    await set_active_players(game, [current_player])
+    await set_allowed_actions(game, [Game.Actions.PLAY])
