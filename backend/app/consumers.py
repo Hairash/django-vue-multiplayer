@@ -3,7 +3,6 @@ import logging
 
 from channels.generic.websocket import AsyncWebsocketConsumer
 
-from app.services.helpers import GameError
 from app.services.db_service import (
     add_visitor_to_game,
     check_end_game,
@@ -46,6 +45,8 @@ from app.services.game_service import (
     generate_deck,
     start_new_turn,
 )
+from app.services.helpers import GameError
+from app.services.lock import LockException, acquire_redis_lock, release_redis_lock
 
 from app.models import Game
 
@@ -124,48 +125,60 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
     #==========================================#
 
     async def handle_play(self, data, game):
-        active_player = await get_player_by_channel_name(game, self.channel_name)
-        if not await self.check_action_allowed(game, active_player):
-            return
-
-        card_dict = data['card']
+        # Try to acquire the lock
         try:
-            await play_card_to_table(game, active_player, card_dict)
-        except GameError as e:
+            lock = await acquire_redis_lock('play', game.id)
+        except LockException as e:
             await self.send_error(str(e))
             return
 
-        current_player = await get_current_player(game)
-        defender = await get_next_player(game, current_player)
-        next_player = await get_next_player(game, defender)
+        try:
+            active_player = await get_player_by_channel_name(game, self.channel_name)
+            if not await self.check_action_allowed(game, active_player):
+                return
 
-        # If all allowed cards were played in the round
-        if await check_stop_attack(game, defender):
-            if game.phase == Game.Phases.DEFENSE:
-                await clear_table(game)
-                await set_current_player(game, defender)
+            card_dict = data['card']
+            try:
+                await play_card_to_table(game, active_player, card_dict)
+            except GameError as e:
+                await self.send_error(str(e))
+                return
+
+            current_player = await get_current_player(game)
+            defender = await get_next_player(game, current_player)
+            next_player = await get_next_player(game, defender)
+
+            # If all allowed cards were played in the round
+            if await check_stop_attack(game, defender):
+                if game.phase == Game.Phases.DEFENSE:
+                    await clear_table(game)
+                    await set_current_player(game, defender)
+                elif game.phase == Game.Phases.ADDITION:
+                    await take_cards_from_table(game, defender)
+                    await set_current_player(game, next_player)
+
+                await self.process_end_of_turn(game)
+
+            # Attackers add cards to defender's hand
             elif game.phase == Game.Phases.ADDITION:
-                await take_cards_from_table(game, defender)
-                await set_current_player(game, next_player)
+                pass
 
-            await self.process_end_of_turn(game)
-
-        # Attackers add cards to defender's hand
-        elif game.phase == Game.Phases.ADDITION:
-            pass
-
-        # Usual cases
-        else:
-            phase = await toggle_phase(game)
-            if phase == Game.Phases.ATTACK:
-                await toggle_active_players(game)
-                await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
+            # Usual cases
             else:
-                await set_active_players(game, [defender])
-                await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.TAKE])
+                phase = await toggle_phase(game)
+                if phase == Game.Phases.ATTACK:
+                    await toggle_active_players(game)
+                    await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
+                else:
+                    await set_active_players(game, [defender])
+                    await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.TAKE])
 
-        await self.broadcast_game_state(game)
-        await self.send_all_player_hands(game)
+            await self.broadcast_game_state(game)
+            await self.send_all_player_hands(game)
+
+        finally:
+            # Ensure the lock is always released
+            await release_redis_lock(lock)
     #==========================================#
 
     async def handle_take(self, data, game):
