@@ -4,7 +4,7 @@ from channels.db import database_sync_to_async
 from rest_framework.authtoken.models import Token
 
 from app.models import Card, Game, Player
-from app.services.helpers import GameError
+from app.services.helpers import GameError, get_player_user_name
 
 
 logger = logging.getLogger('django_vue_multiplayer')
@@ -69,8 +69,8 @@ def get_next_player(game, player):
 
 @database_sync_to_async
 def get_game_visitors_participants_names(game):
-    visitor_names = [getattr(getattr(player, 'user'), 'username', '???') for player in game.visitors.all()]
-    participant_names = [getattr(getattr(player, 'user'), 'username', '???') for player in game.participants.all()]
+    visitor_names = [get_player_user_name(player) for player in game.visitors.all()]
+    participant_names = [get_player_user_name(player) for player in game.participants.all()]
     return visitor_names, participant_names
 
 
@@ -113,7 +113,9 @@ def set_current_player(game, player):
 
 @database_sync_to_async
 def get_current_player_user_name(game):
-    return getattr(getattr(getattr(game, 'current_player', None), 'user', None), 'username', None)
+    if game.current_player:
+        return get_player_user_name(game.current_player)
+    return None
 
 
 @database_sync_to_async
@@ -158,8 +160,10 @@ def set_allowed_actions(game, actions):
 def toggle_phase(game):
     if game.phase == Game.Phases.ATTACK:
         game.phase = Game.Phases.DEFENSE
-    else:
+    elif game.phase == Game.Phases.DEFENSE:
         game.phase = Game.Phases.ATTACK
+    else:
+        raise GameError(f'Current phase cannot be toggled: {game.phase}')
     game.save()
     return game.phase
 

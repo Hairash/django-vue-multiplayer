@@ -2,6 +2,8 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.contrib.postgres.fields import ArrayField
 
+from app.services.helpers import get_player_user_name
+
 
 class Card:
     class SUITS:
@@ -43,6 +45,8 @@ class Player(models.Model):
     channel_name = models.CharField(max_length=255)
     hand = models.JSONField(default=list)
 
+    def __str__(self):
+        return get_player_user_name(self)
 
 class Game(models.Model):
     class States(models.TextChoices):
@@ -53,6 +57,7 @@ class Game(models.Model):
     class Phases(models.TextChoices):
         ATTACK = 'attack', 'Attack'
         DEFENSE = 'defense', 'Defense'
+        ADDITION = 'addition', 'Addition'
 
     class Actions(models.TextChoices):
         PLAY = 'play', 'Play'
@@ -70,7 +75,7 @@ class Game(models.Model):
         blank=True,
         related_name='games_as_current_player',
     )
-    phase = models.CharField(max_length=7, choices=Phases.choices, default=Phases.ATTACK)
+    phase = models.CharField(max_length=15, choices=Phases.choices, default=Phases.ATTACK)
     # active_players - who may take actions right now
     active_players = models.ManyToManyField(
         Player,

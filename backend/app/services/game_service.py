@@ -1,9 +1,11 @@
+import logging
 import random
 
 from channels.db import database_sync_to_async
 
 from app.models import Card, Game
 from app.services.db_service import (
+    get_current_player,
     get_deck,
     get_next_player,
     get_player_hand,
@@ -19,10 +21,12 @@ from app.services.db_service import (
 
 CARDS_IN_HAND = 6
 
+logger = logging.getLogger('django_vue_multiplayer')
+
 
 @database_sync_to_async
 def generate_deck(game):
-    print('generate deck')
+    logger.debug('generate deck')
     RANKS = list(range(6, 15))
     SUITS = [
         Card.SUITS.SPADES,
@@ -44,7 +48,7 @@ def draw_cards(game, player, n):
         return
     card_dicts = game.deck[-n:]
     del game.deck[-n:]
-    print('cards to draw:', card_dicts)
+    logger.debug(f'cards to draw: {card_dicts}')
 
     if card_dicts:
         player.hand += card_dicts
@@ -56,21 +60,23 @@ def draw_cards(game, player, n):
 
 
 async def replenish_hand(game, player):
-    print('replenish_hand')
+    logger.debug('replenish_hand')
     num_cards_to_draw = max(CARDS_IN_HAND - len(await get_player_hand(player)), 0)
     await draw_cards(game, player, num_cards_to_draw)
 
 
 async def replenish_all_player_hands(game):
-    print('replenish_all_player_hands')
+    logger.debug('replenish_all_player_hands')
     participants = await get_participants(game)
     for player in participants:
         await replenish_hand(game, player)
 
 
-async def start_new_turn(game, current_player):
+async def start_new_turn(game):
     await replenish_all_player_hands(game)
-    print('Cards left:', len(await get_deck(game)))
+    logger.debug(f'Cards left: {len(await get_deck(game))}')
+    current_player = await get_current_player(game)
+
     # Remove players with no cards
     while not await get_player_hand(current_player) and await get_participants(game):
         next_player = await get_next_player(game, current_player)
@@ -88,6 +94,8 @@ async def start_new_turn(game, current_player):
 async def check_stop_attack(game, defender):
     if not await get_player_hand(defender):
         return True
+    # TOOD: Logic. Change condition (not more than 6 attacker's cards)
+    # And attacker's cards not more than cards in the defender's hand
     if len(await get_table(game)) >= CARDS_IN_HAND * 2:
         return True
     return False

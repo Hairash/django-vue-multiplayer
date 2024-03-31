@@ -4,49 +4,50 @@ import logging
 from channels.generic.websocket import AsyncWebsocketConsumer
 
 from app.services.helpers import GameError
-
-from .services.db_service import (
-    check_end_game,
-    end_game,
-    get_user_by_token,
-    create_player,
-    get_or_create_game,
+from app.services.db_service import (
     add_visitor_to_game,
-    is_player_in_active_players,
-    is_player_participant,
-    prepare_end_game_message,
-    update_player_user,
-    get_player_by_user,
-    get_player_by_channel_name,
-    get_next_player,
-    get_game_visitors_participants_names,
-    set_game_state,
-    init_participants,
-    remove_player,
-    init_current_player,
-    set_current_player,
-    get_current_player,
-    get_current_player_user_name,
-    get_phase,
+    check_end_game,
+    clear_table,
+    create_player,
+    end_game,
     get_active_player_names,
     get_allowed_actions,
+    get_current_player,
+    get_current_player_user_name,
+    get_game_visitors_participants_names,
+    get_next_player,
+    get_or_create_game,
+    get_participants,
+    get_phase,
+    get_player_by_channel_name,
+    get_player_by_user,
+    get_player_hand,
+    get_table,
+    get_user_by_token,
+    init_current_player,
+    init_participants,
+    is_player_in_active_players,
+    is_player_participant,
+    play_card_to_table,
+    prepare_end_game_message,
+    remove_player,
     set_active_players,
     set_allowed_actions,
-    toggle_phase,
-    toggle_active_players,
-    get_participants,
-    get_player_hand,
-    play_card_to_table,
-    get_table,
+    set_current_player,
+    set_game_state,
+    set_phase,
     take_cards_from_table,
-    clear_table,
+    toggle_active_players,
+    toggle_phase,
+    update_player_user,
 )
-from .services.game_service import (
+from app.services.game_service import (
     check_stop_attack,
     generate_deck,
     start_new_turn,
 )
-from .models import Game
+
+from app.models import Game
 
 
 logger = logging.getLogger('django_vue_multiplayer')
@@ -96,12 +97,14 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
             await update_player_user(player, user)
             await self.send(json.dumps({'action': 'authenticated'}))
             await self.broadcast_server_state(game)
+
         elif not user:
             await self.send_error('Invalid token. Please re-login')
             await self.close()
         else:
             await self.send_error('User is already connected')
             await self.close()
+    #==========================================#
 
     async def handle_start(self, data, game):
         if game.state != Game.States.NOT_STARTED:
@@ -111,19 +114,18 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
         await set_game_state(game, Game.States.GAME)
         await init_participants(game)
         await self.broadcast_server_state(game)
+
         await generate_deck(game)
-        current_player = await init_current_player(game)
-        await start_new_turn(game, current_player)
+        await init_current_player(game)
+        await start_new_turn(game)
+
         await self.broadcast_game_state(game)
         await self.send_all_player_hands(game)
+    #==========================================#
 
     async def handle_play(self, data, game):
         active_player = await get_player_by_channel_name(game, self.channel_name)
-        if not is_player_participant(game, active_player):
-            await self.send_error('Game is already in progress. Please wait for the end of the game.')
-            return
-        if not is_player_in_active_players(game, active_player):
-            await self.send_error('Please wait for your turn')
+        if not await self.check_action_allowed(game, active_player):
             return
 
         card_dict = data['card']
@@ -135,14 +137,22 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
 
         current_player = await get_current_player(game)
         defender = await get_next_player(game, current_player)
+        next_player = await get_next_player(game, defender)
 
         # If all allowed cards were played in the round
-        if game.phase == Game.Phases.DEFENSE and await check_stop_attack(game, defender):
-            await clear_table(game)
-            current_player = await set_current_player(game, defender)
-            await self.send_all_player_hands(game)
-            await start_new_turn(game, current_player)
-            await self.check_and_process_end_game(game)
+        if await check_stop_attack(game, defender):
+            if game.phase == Game.Phases.DEFENSE:
+                await clear_table(game)
+                await set_current_player(game, defender)
+            elif game.phase == Game.Phases.ADDITION:
+                await take_cards_from_table(game, defender)
+                await set_current_player(game, next_player)
+
+            await self.process_end_of_turn(game)
+
+        # Attackers add cards to defender's hand
+        elif game.phase == Game.Phases.ADDITION:
+            pass
 
         # Usual cases
         else:
@@ -156,56 +166,48 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
 
         await self.broadcast_game_state(game)
         await self.send_all_player_hands(game)
-        await self.broadcast_server_state(game)
+    #==========================================#
 
     async def handle_take(self, data, game):
         active_player = await get_player_by_channel_name(game, self.channel_name)
-        if not is_player_participant(game, active_player):
-            await self.send_error('Game is already in progress. Please wait for the end of the game.')
+        if not await self.check_action_allowed(game, active_player):
             return
-        if not is_player_in_active_players(game, active_player):
-            await self.send_error('Please wait for your turn')
+
+        await toggle_active_players(game)
+        await set_phase(game, Game.Phases.ADDITION)
+        await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
+
+        await self.broadcast_game_state(game)
+        await self.send_all_player_hands(game)
+    #==========================================#
+
+    async def handle_pass(self, data, game):
+        active_player = await get_player_by_channel_name(game, self.channel_name)
+        if not await self.check_action_allowed(game, active_player):
             return
 
         current_player = await get_current_player(game)
         defender = await get_next_player(game, current_player)
         next_player = await get_next_player(game, defender)
-        current_player = await set_current_player(game, next_player)
-        await self.broadcast_game_state(game)
-
-        await take_cards_from_table(game, active_player)
-        await start_new_turn(game, current_player)
-        await self.broadcast_game_state(game)
-        await self.send_all_player_hands(game)
-        await self.check_and_process_end_game(game)
-        await self.broadcast_server_state(game)
-
-    async def handle_pass(self, data, game):
-        active_player = await get_player_by_channel_name(game, self.channel_name)
-        if not is_player_participant(game, active_player):
-            await self.send_error('Game is already in progress. Please wait for the end of the game.')
-            return
-        if not is_player_in_active_players(game, active_player):
-            await self.send_error('Please wait for your turn')
-            return
 
         # TODO: Logic. Make more wise handling - count number of passes
-        # Move cards to the discard pile
-        await clear_table(game)
+        # Current defender takes cards
+        if game.phase == Game.Phases.ADDITION:
+            await take_cards_from_table(game, defender)
+            current_player = await set_current_player(game, next_player)
 
-        # Change current player
-        # TODO: Refactoring. Make function to move current_player for 1 or 2 positions
-        # (next or next after the next)
-        current_player = await get_current_player(game)
-        next_player = await get_next_player(game, current_player)
-        current_player = await set_current_player(game, next_player)
-        await self.broadcast_game_state(game)
+        # Current attacker passes
+        else:
+            await clear_table(game)
+            # TODO: Refactoring. Make function to move current_player for 1 or 2 positions
+            # (next or next after the next)
+            await set_current_player(game, defender)
 
-        await start_new_turn(game, current_player)
+        await self.process_end_of_turn(game)
+
         await self.broadcast_game_state(game)
         await self.send_all_player_hands(game)
-        await self.check_and_process_end_game(game)
-        await self.broadcast_server_state(game)
+    #==========================================#
 
     async def handle_end(self, data, game):
         active_player = await get_player_by_channel_name(game, self.channel_name)
@@ -215,8 +217,15 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
 
         await end_game(game)
         await self.broadcast_server_state(game)
+    #==========================================#
 
     # Action helpers
+
+    async def process_end_of_turn(self, game):
+        await self.send_all_player_hands(game)
+        await start_new_turn(game)
+        await self.check_and_process_end_game(game)
+        await self.broadcast_server_state(game)
 
     async def check_and_process_end_game(self, game):
         if await check_end_game(game):
@@ -224,6 +233,15 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
             # await self.broadcast_game_state(game)
             await self.broadcast_data({'action': 'info', 'message': end_game_message})
             await end_game(game)
+
+    async def check_action_allowed(self, game, active_player):
+        if not await is_player_participant(game, active_player):
+            await self.send_error('Game is already in progress. Please wait for the end of the game.')
+            return False
+        if not await is_player_in_active_players(game, active_player):
+            await self.send_error('Please wait for your turn')
+            return False
+        return True
 
     # Messaging helpers
 
@@ -280,6 +298,8 @@ class GameConsumer(ActionHandlerMixin, BroadcastMixin, AsyncWebsocketConsumer):
         game = await get_or_create_game()
         player = await create_player(self.channel_name)
         await add_visitor_to_game(game, player)
+
+        # Broadcast not needed here, because it is called on "authenticate" action
 
         await self.channel_layer.group_add(
             self.get_user_group_name(self.channel_name),
