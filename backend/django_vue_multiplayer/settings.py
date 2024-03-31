@@ -26,19 +26,11 @@ SECRET_KEY = 'django-insecure-@0!l$k^+eom^6&sc==drha_8s@1ra4j*ba9*jbb5jfykr^&*gw
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = [
-    '*',
-    # TODO: Check, do we need it on PROD
-    # 'durak-game-backend.onrender.com',
-    # 'localhost',
-    # '127.0.0.1'
-]
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS').split(',')
+# print('ALLOWED_HOSTS:', ALLOWED_HOSTS)
 
-# For development purposes, you can allow any origin
-# TODO: Check, do we need it on PROD
-CORS_ALLOWED_ORIGINS = [
-    'https://durak-game-frontend.onrender.com',
-]
+CORS_ALLOWED_ORIGINS = [os.getenv('CORS_ALLOWED_ORIGINS')]
+# print('CORS_ALLOWED_ORIGINS:', CORS_ALLOWED_ORIGINS)
 
 # Application definition
 
@@ -54,7 +46,6 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'app',
     'user_auth',
-    # TODO: Check, do we need it on PROD
     'corsheaders',
 ]
 

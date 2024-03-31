@@ -63,7 +63,7 @@ export default {
   methods: {
     connectToGame() {
       if (this.socket) return;
-      this.socket = new WebSocket('wss://durak-game-backend.onrender.com/ws/game/');
+      this.socket = new WebSocket(process.env.VUE_APP_WEBSOCKET_URL);
       this.clientState.checkConnected(this.socket);
 
       this.socket.addEventListener('open', (event) => {

@@ -6,6 +6,8 @@ backend/staticfiles
 *.log
 venv
 .idea
+backend/local*
 
 # Front
 node_modules
+frontend/.env.local
