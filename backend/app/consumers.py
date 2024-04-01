@@ -125,28 +125,45 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
     #==========================================#
 
     async def handle_play(self, data, game):
-        # Try to acquire the lock
-        try:
-            lock = await acquire_redis_lock('play', game.id)
-        except LockException as e:
-            await self.send_error(str(e))
+        active_player = await get_player_by_channel_name(game, self.channel_name)
+        if not await self.check_action_allowed(game, active_player):
             return
 
-        try:
-            active_player = await get_player_by_channel_name(game, self.channel_name)
-            if not await self.check_action_allowed(game, active_player):
+        current_player = await get_current_player(game)
+        defender = await get_next_player(game, current_player)
+        next_player = await get_next_player(game, defender)
+
+        card_dict = data['card']
+
+        if game.phase == Game.Phases.ATTACK:
+            # Try to acquire the lock
+            try:
+                lock = await acquire_redis_lock('play', game.id)
+            except LockException as e:
+                await self.send_error(str(e))
                 return
 
-            card_dict = data['card']
+            try:
+                try:
+                    await play_card_to_table(game, active_player, card_dict)
+                except GameError as e:
+                    await self.send_error(str(e))
+                    return
+
+                await set_phase(game, Game.Phases.DEFENSE)
+                await set_active_players(game, [defender])
+                await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.TAKE])
+
+            # Ensure the lock is always released
+            finally:
+                await release_redis_lock(lock)
+
+        else:
             try:
                 await play_card_to_table(game, active_player, card_dict)
             except GameError as e:
                 await self.send_error(str(e))
                 return
-
-            current_player = await get_current_player(game)
-            defender = await get_next_player(game, current_player)
-            next_player = await get_next_player(game, defender)
 
             # If all allowed cards were played in the round
             if await check_stop_attack(game, defender):
@@ -163,22 +180,13 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
             elif game.phase == Game.Phases.ADDITION:
                 pass
 
-            # Usual cases
-            else:
-                phase = await toggle_phase(game)
-                if phase == Game.Phases.ATTACK:
-                    await toggle_active_players(game)
-                    await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
-                else:
-                    await set_active_players(game, [defender])
-                    await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.TAKE])
+            # After defense
+            await set_phase(game, Game.Phases.ATTACK)
+            await toggle_active_players(game)
+            await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
 
-            await self.broadcast_game_state(game)
-            await self.send_all_player_hands(game)
-
-        finally:
-            # Ensure the lock is always released
-            await release_redis_lock(lock)
+        await self.broadcast_game_state(game)
+        await self.send_all_player_hands(game)
     #==========================================#
 
     async def handle_take(self, data, game):
