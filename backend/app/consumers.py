@@ -181,9 +181,10 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
                 pass
 
             # After defense
-            await set_phase(game, Game.Phases.ATTACK)
-            await toggle_active_players(game)
-            await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
+            else:
+                await set_phase(game, Game.Phases.ATTACK)
+                await toggle_active_players(game)
+                await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
 
         await self.broadcast_game_state(game)
         await self.send_all_player_hands(game)

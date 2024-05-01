@@ -48,7 +48,7 @@ def draw_cards(game, player, n):
         return
     card_dicts = game.deck[-n:]
     del game.deck[-n:]
-    logger.debug(f'cards to draw: {card_dicts}')
+    logger.debug(f"cards to draw: {' '.join([str(Card.from_dict(card)) for card in card_dicts])}")
 
     if card_dicts:
         player.hand += card_dicts
