@@ -1,5 +1,7 @@
-from django.core.cache import cache
+from contextlib import asynccontextmanager
+
 from asgiref.sync import sync_to_async
+from django.core.cache import cache
 
 
 class LockException(Exception):
@@ -18,3 +20,18 @@ async def acquire_redis_lock(lock_id, oid, timeout=1200):
 # Release the lock
 async def release_redis_lock(lock):
     await sync_to_async(cache.delete)(lock)
+
+
+@asynccontextmanager
+async def redis_lock(lock_id, oid):
+    success = False
+    lock = None
+    try:
+        lock = await acquire_redis_lock(lock_id, oid)
+        success = True
+        yield success, lock
+    except LockException as e:
+        yield success, lock
+    finally:
+        if lock:
+            await release_redis_lock(lock)

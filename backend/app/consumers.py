@@ -46,7 +46,7 @@ from app.services.game_service import (
     start_new_turn,
 )
 from app.services.helpers import GameError
-from app.services.lock import LockException, acquire_redis_lock, release_redis_lock
+from app.services.lock import redis_lock
 
 from app.models import Game
 
@@ -129,65 +129,53 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
         if not await self.check_action_allowed(game, active_player):
             return
 
-        current_player = await get_current_player(game)
-        defender = await get_next_player(game, current_player)
-        next_player = await get_next_player(game, defender)
-
-        card_dict = data['card']
-
-        if game.phase == Game.Phases.ATTACK:
-            # Try to acquire the lock
-            try:
-                lock = await acquire_redis_lock('play', game.id)
-            except LockException as e:
-                await self.send_error(str(e))
+        async with redis_lock('play', game.id) as (success, _):
+            if not success:
+                await self.send_error('Operation is locked, try again later')
                 return
+            
+            current_player = await get_current_player(game)
+            defender = await get_next_player(game, current_player)
+            next_player = await get_next_player(game, defender)
 
-            try:
-                try:
-                    await play_card_to_table(game, active_player, card_dict)
-                except GameError as e:
-                    await self.send_error(str(e))
-                    return
+            card_dict = data['card']
 
-                await set_phase(game, Game.Phases.DEFENSE)
-                await set_active_players(game, [defender])
-                await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.TAKE])
-
-            # Ensure the lock is always released
-            finally:
-                await release_redis_lock(lock)
-
-        else:
             try:
                 await play_card_to_table(game, active_player, card_dict)
             except GameError as e:
                 await self.send_error(str(e))
                 return
 
-            # If all allowed cards were played in the round
-            if await check_stop_attack(game, defender):
-                if game.phase == Game.Phases.DEFENSE:
-                    await clear_table(game)
-                    await set_current_player(game, defender)
-                elif game.phase == Game.Phases.ADDITION:
-                    await take_cards_from_table(game, defender)
-                    await set_current_player(game, next_player)
+            if game.phase == Game.Phases.ATTACK:
+                await set_phase(game, Game.Phases.DEFENSE)
+                await set_active_players(game, [defender])
+                await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.TAKE])
 
-                await self.process_end_of_turn(game)
-
-            # Attackers add cards to defender's hand
-            elif game.phase == Game.Phases.ADDITION:
-                pass
-
-            # After defense
             else:
-                await set_phase(game, Game.Phases.ATTACK)
-                await toggle_active_players(game)
-                await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
+                # If all allowed cards were played in the round
+                if await check_stop_attack(game, defender):
+                    if game.phase == Game.Phases.DEFENSE:
+                        await clear_table(game)
+                        await set_current_player(game, defender)
+                    elif game.phase == Game.Phases.ADDITION:
+                        await take_cards_from_table(game, defender)
+                        await set_current_player(game, next_player)
 
-        await self.broadcast_game_state(game)
-        await self.send_all_player_hands(game)
+                    # TODO: Check isn't there a lot of broadcasts for state, hand etc.
+                    await self.process_end_of_turn(game)
+
+                # Attackers add cards to defender's hand
+                elif game.phase == Game.Phases.ADDITION:
+                    pass
+
+                # After defense
+                else:
+                    await set_phase(game, Game.Phases.ATTACK)
+                    await toggle_active_players(game)
+                    await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
+
+            await self.broadcast_game_state(game)
+            await self.send_all_player_hands(game)
     #==========================================#
 
     async def handle_take(self, data, game):
@@ -195,12 +183,17 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
         if not await self.check_action_allowed(game, active_player):
             return
 
-        await toggle_active_players(game)
-        await set_phase(game, Game.Phases.ADDITION)
-        await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
+        async with redis_lock('play', game.id) as (success, _):
+            if not success:
+                await self.send_error('Operation is locked, try again later')
+                return
 
-        await self.broadcast_game_state(game)
-        await self.send_all_player_hands(game)
+            await toggle_active_players(game)
+            await set_phase(game, Game.Phases.ADDITION)
+            await set_allowed_actions(game, [Game.Actions.PLAY, Game.Actions.PASS])
+
+            await self.broadcast_game_state(game)
+            await self.send_all_player_hands(game)
     #==========================================#
 
     async def handle_pass(self, data, game):
@@ -208,27 +201,32 @@ class ActionHandlerMixin(BroadcastMixin, AsyncWebsocketConsumer):
         if not await self.check_action_allowed(game, active_player):
             return
 
-        current_player = await get_current_player(game)
-        defender = await get_next_player(game, current_player)
-        next_player = await get_next_player(game, defender)
+        async with redis_lock('play', game.id) as (success, _):
+            if not success:
+                await self.send_error('Operation is locked, try again later')
+                return
 
-        # TODO: Logic. Make more wise handling - count number of passes
-        # Current defender takes cards
-        if game.phase == Game.Phases.ADDITION:
-            await take_cards_from_table(game, defender)
-            current_player = await set_current_player(game, next_player)
+            current_player = await get_current_player(game)
+            defender = await get_next_player(game, current_player)
+            next_player = await get_next_player(game, defender)
 
-        # Current attacker passes
-        else:
-            await clear_table(game)
-            # TODO: Refactoring. Make function to move current_player for 1 or 2 positions
-            # (next or next after the next)
-            await set_current_player(game, defender)
+            # TODO: Logic. Make more wise handling - count number of passes
+            # Current defender takes cards
+            if game.phase == Game.Phases.ADDITION:
+                await take_cards_from_table(game, defender)
+                current_player = await set_current_player(game, next_player)
 
-        await self.process_end_of_turn(game)
+            # Current attacker passes
+            else:
+                await clear_table(game)
+                # TODO: Refactoring. Make function to move current_player for 1 or 2 positions
+                # (next or next after the next)
+                await set_current_player(game, defender)
 
-        await self.broadcast_game_state(game)
-        await self.send_all_player_hands(game)
+            await self.process_end_of_turn(game)
+
+            await self.broadcast_game_state(game)
+            await self.send_all_player_hands(game)
     #==========================================#
 
     async def handle_end(self, data, game):
