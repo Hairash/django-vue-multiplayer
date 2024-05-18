@@ -6,3 +6,4 @@ django-cors-headers
 django_redis
 djangorestframework
 psycopg2
+gunicorn
